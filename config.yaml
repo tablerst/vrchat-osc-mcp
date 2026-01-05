@@ -1,0 +1,44 @@
+# vrchat-osc-mcp 默认配置样例
+
+mcp:
+  transport: stdio  # stdio | sse | http
+  sse:
+    host: 127.0.0.1
+    port: 8000
+  http:
+    host: 127.0.0.1
+    port: 8000
+    path: /mcp
+
+osc:
+  send:
+    ip: 127.0.0.1
+    port: 9000
+  receive:
+    enabled: false
+    ip: 127.0.0.1
+    port: 9001
+
+vrchat:
+  # Windows 默认会自动推导 LocalLow\VRChat\VRChat\OSC；MVP-1 才用到
+  osc_root: null
+  # 可选：显式指定 avtr_*.json（比如调试时用仓库内 sample.json）
+  avatar_config: null
+
+logging:
+  level: INFO
+  json: true
+
+safety:
+  osc_per_second: 60
+  chat_per_minute: 10
+  max_axis_duration_ms: 2000
+  max_button_hold_ms: 1000
+
+  # MVP-0: 默认 allowlist（安全起见，allowed_parameters 为空时会拒绝所有参数写入）
+  parameter_policy: allowlist  # strict | allowlist | permissive
+  allowed_parameters: []
+
+profiles:
+  directory: profiles
+  active: default

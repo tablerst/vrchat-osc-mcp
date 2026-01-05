@@ -1,0 +1,34 @@
+[project]
+name = "vrchat-osc-mcp"
+version = "0.1.0"
+description = "VRChat Official OSC MCP Server (FastMCP + python-osc)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+	"fastmcp<3",
+	"python-osc>=1.8.3",
+	"pydantic>=2.8",
+	"pydantic-settings>=2.4",
+	"PyYAML>=6.0.1",
+	"structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+	"pytest>=8.0",
+	"pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+vrchat-osc-mcp = "vrchat_osc_mcp.main:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vrchat_osc_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
