@@ -9,6 +9,7 @@ from .config.loader import load_settings
 from .mcp_server import create_server
 from .observability.logging import configure_logging, get_logger
 from .osc.transport import OSCTransport
+from .osc.receiver import OSCReceiver
 from .domain.adapter import VRChatDomainAdapter
 from .vrc_config.parser import load_avatar_schema
 from .vrc_config.resolver import resolve_avatar_config_path
@@ -104,6 +105,8 @@ async def _run(settings) -> None:
     logger = get_logger().bind(component="app")
 
     schema = None
+    schema_source: str | None = None
+    schema_path_str: str | None = None
     schema_path = resolve_avatar_config_path(
         osc_root=settings.vrchat.osc_root,
         explicit_path=settings.vrchat.avatar_config,
@@ -111,10 +114,12 @@ async def _run(settings) -> None:
     if schema_path is not None:
         try:
             schema = load_avatar_schema(schema_path)
+            schema_path_str = str(schema_path)
+            schema_source = "local_config_explicit" if settings.vrchat.avatar_config is not None else "local_config_newest"
             logger.info(
                 "schema.loaded",
-                schema_source="local_config",
-                schema_path=str(schema_path),
+                schema_source=schema_source,
+                schema_path=schema_path_str,
                 avatar_id=schema.avatar_id,
             )
         except Exception as e:  # noqa: BLE001
@@ -138,9 +143,32 @@ async def _run(settings) -> None:
         settings=settings,
         logger=get_logger().bind(component="domain"),
         schema=schema,
+        schema_source=schema_source,
+        schema_path=schema_path_str,
     )
 
     mcp = create_server(adapter=adapter)
+
+    receiver: OSCReceiver | None = None
+    if settings.osc.receive.enabled:
+        receiver = OSCReceiver(
+            bind_ip=settings.osc.receive.ip,
+            port=settings.osc.receive.port,
+            logger=get_logger().bind(component="osc-receiver"),
+            on_avatar_change=adapter.on_avatar_change,
+        )
+        try:
+            await receiver.start()
+        except Exception as e:  # noqa: BLE001
+            # Receiver is optional; do not fail the whole server.
+            receiver = None
+            logger.warning(
+                "osc.receiver.start_failed",
+                bind_ip=settings.osc.receive.ip,
+                bind_port=settings.osc.receive.port,
+                error=str(e),
+                hint="该端口可能被其它 OSC 工具占用；可以关闭 receiver 或改用其它端口。",
+            )
 
     logger.info(
         "server.start",
@@ -167,6 +195,8 @@ async def _run(settings) -> None:
                 path=settings.mcp.http.path,
             )
     finally:
+        if receiver is not None:
+            await receiver.close()
         await osc.close()
 
 

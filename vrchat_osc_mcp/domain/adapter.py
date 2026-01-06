@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .chatbox import trim_chatbox_text
 from .errors import DomainError
 from .safety import SlidingWindowRateLimiter
 from .streams import EyeStream, TrackingStream, StreamStatus, tracker_to_osc_index, validate_gaze_mode
+from ..vrc_config.parser import load_avatar_schema
+from ..vrc_config.resolver import resolve_avatar_config_path_for_avatar_id
 from ..vrc_config.schema import AvatarSchema, ParameterType
 
 
@@ -92,6 +95,46 @@ def _resolve_supported_input(*, raw: str, allowed: dict[str, str], kind: str) ->
     )
 
 
+@dataclass(frozen=True)
+class _SchemaState:
+    """Immutable snapshot of avatar schema + refresh status.
+
+    We keep the last-known-good schema even if refresh fails.
+    """
+
+    # Last observed /avatar/change value (authoritative when present)
+    observed_avatar_id: str | None
+
+    # Last-known-good schema
+    schema: AvatarSchema | None
+    schema_source: str | None
+    schema_path: str | None
+    schema_loaded_at_ms: int | None
+
+    # Refresh attempt tracking
+    schema_last_refresh_attempt_at_ms: int | None
+    schema_last_refresh_ok_at_ms: int | None
+    schema_last_error: dict[str, Any] | None
+
+    @classmethod
+    def initial(cls, *, schema: AvatarSchema | None, schema_source: str | None, schema_path: str | None) -> "_SchemaState":
+        now_ms = int(time.time() * 1000)
+        loaded_at = now_ms if schema is not None else None
+        return cls(
+            observed_avatar_id=None,
+            schema=schema,
+            schema_source=schema_source,
+            schema_path=schema_path,
+            schema_loaded_at_ms=loaded_at,
+            schema_last_refresh_attempt_at_ms=None,
+            schema_last_refresh_ok_at_ms=loaded_at,
+            schema_last_error=None,
+        )
+
+    def _with(self, **kwargs: Any) -> "_SchemaState":
+        return replace(self, **kwargs)
+
+
 class VRChatDomainAdapter:
     """VRChat semantics + safety valves.
 
@@ -108,11 +151,17 @@ class VRChatDomainAdapter:
         settings,
         logger,
         schema: AvatarSchema | None = None,
+        schema_source: str | None = None,
+        schema_path: str | None = None,
     ) -> None:
         self._transport = transport
         self._settings = settings
         self._logger = logger
-        self._schema = schema
+        self._schema_state = _SchemaState.initial(
+            schema=schema,
+            schema_source=schema_source,
+            schema_path=schema_path,
+        )
         self._held_buttons: set[str] = set()
         self._chat_limiter = SlidingWindowRateLimiter(
             max_events=settings.safety.chat_per_minute,
@@ -122,6 +171,98 @@ class VRChatDomainAdapter:
         # Background streams (tracking/eye)
         self._tracking_stream = TrackingStream(transport=transport, logger=logger.bind(component="tracking-stream"))
         self._eye_stream = EyeStream(transport=transport, logger=logger.bind(component="eye-stream"))
+
+    def _schema_snapshot(self) -> "_SchemaState":
+        # Copy-on-read snapshot: this reference is treated as immutable.
+        return self._schema_state
+
+    async def on_avatar_change(self, avatar_id: str) -> None:
+        """Handle /avatar/change.
+
+        Contract:
+        - Always record the observed avatar_id.
+        - If schema refresh fails, keep the last-known-good schema.
+        - strict policy continues to validate against the last-known-good schema.
+        """
+
+        avatar_id = (avatar_id or "").strip()
+        if not avatar_id:
+            return
+
+        now_ms = int(time.time() * 1000)
+        old = self._schema_snapshot()
+
+        # Record attempt immediately (even before we know if we can load schema).
+        self._schema_state = old._with(
+            observed_avatar_id=avatar_id,
+            schema_last_refresh_attempt_at_ms=now_ms,
+        )
+
+        schema_path = resolve_avatar_config_path_for_avatar_id(
+            osc_root=self._settings.vrchat.osc_root,
+            avatar_id=avatar_id,
+        )
+
+        if schema_path is None:
+            err = {
+                "code": "CAPABILITY_UNAVAILABLE",
+                "message": "未找到该 Avatar 的 LocalLow OSC config 文件（可能是 Build & Test 或未生成配置）。",
+                "details": {
+                    "avatar_id": avatar_id,
+                    "hint": "如果该 Avatar 仅通过 Build & Test 加载，VRChat 不会将 OSC config 保存到磁盘。",
+                },
+            }
+            self._schema_state = self._schema_snapshot()._with(
+                schema_last_error=err,
+            )
+            self._logger.warning(
+                "schema.refresh_failed",
+                schema_source="local_config_by_avatar_id",
+                avatar_id=avatar_id,
+                reason="config_not_found",
+            )
+            return
+
+        try:
+            new_schema = load_avatar_schema(schema_path)
+        except Exception as e:  # noqa: BLE001
+            err = {
+                "code": "CAPABILITY_UNAVAILABLE",
+                "message": "读取/解析 Avatar OSC config 失败，已保留旧 schema。",
+                "details": {
+                    "avatar_id": avatar_id,
+                    "schema_path": str(schema_path),
+                    "error": str(e),
+                },
+            }
+            self._schema_state = self._schema_snapshot()._with(
+                schema_last_error=err,
+            )
+            self._logger.warning(
+                "schema.refresh_failed",
+                schema_source="local_config_by_avatar_id",
+                avatar_id=avatar_id,
+                schema_path=str(schema_path),
+                reason="load_failed",
+                error=str(e),
+            )
+            return
+
+        # Success: swap schema snapshot.
+        self._schema_state = self._schema_snapshot()._with(
+            schema=new_schema,
+            schema_source="local_config_by_avatar_id",
+            schema_path=str(schema_path),
+            schema_loaded_at_ms=now_ms,
+            schema_last_refresh_ok_at_ms=now_ms,
+            schema_last_error=None,
+        )
+        self._logger.info(
+            "schema.refreshed",
+            schema_source="local_config_by_avatar_id",
+            avatar_id=new_schema.avatar_id,
+            schema_path=str(schema_path),
+        )
 
     # -----------------
     # Meta domain
@@ -134,7 +275,7 @@ class VRChatDomainAdapter:
         # We cannot truly probe VRChat OSC readiness (UDP is fire-and-forget).
         # Best-effort signal: if we were able to load LocalLow OSC config, OSC
         # was enabled at least once.
-        osc_enabled_detected = self._schema is not None
+        osc_enabled_detected = self._schema_snapshot().schema is not None
 
         def _stream_obj(s: StreamStatus) -> dict[str, Any]:
             d: dict[str, Any] = {
@@ -160,6 +301,19 @@ class VRChatDomainAdapter:
     def meta_get_capabilities(self, *, refresh: bool = False) -> dict[str, Any]:
         # refresh 预留给未来：从 /avatar/change 或 receiver 刷新 schema/能力缓存。
         _ = refresh
+
+        s = self._schema_snapshot()
+        schema_avatar_id = s.schema.avatar_id if s.schema is not None else None
+        schema_stale = bool(s.observed_avatar_id and schema_avatar_id and s.observed_avatar_id != schema_avatar_id)
+        if s.schema is None:
+            schema_confidence = "none"
+        elif s.observed_avatar_id is None:
+            schema_confidence = "guessed"
+        elif schema_stale:
+            schema_confidence = "stale"
+        else:
+            schema_confidence = "observed"
+
         return {
             "input_axes_supported": sorted(_SUPPORTED_INPUT_AXES.keys()),
             "input_buttons_supported": sorted(_INPUT_BUTTONS.keys()),
@@ -167,6 +321,18 @@ class VRChatDomainAdapter:
             "eye_tracking_supported": True,
             "chatbox_supported": True,
             "avatar_parameters_supported": True,
+            "avatar": {
+                "current_avatar_id": s.observed_avatar_id,
+                "schema_avatar_id": schema_avatar_id,
+                "schema_source": s.schema_source,
+                "schema_path": s.schema_path,
+                "schema_confidence": schema_confidence,
+                "schema_stale": schema_stale,
+                "schema_loaded_at_ms": s.schema_loaded_at_ms,
+                "schema_last_refresh_attempt_at_ms": s.schema_last_refresh_attempt_at_ms,
+                "schema_last_refresh_ok_at_ms": s.schema_last_refresh_ok_at_ms,
+                "schema_last_error": s.schema_last_error,
+            },
             "notes": {
                 "lookhorizontal_vr": "VR 舒适转向开启时 LookHorizontal=1 可能触发 snap-turn（见 VRChat 文档）。",
                 "input_write_only": "VRChat /input 是 write-only；不归零会持续生效。",
@@ -178,11 +344,12 @@ class VRChatDomainAdapter:
     # -----------------
 
     def avatar_list_parameters(self) -> dict[str, Any]:
-        if self._schema is None:
+        schema = self._schema_snapshot().schema
+        if schema is None:
             return {"parameters": []}
 
         params: list[dict[str, Any]] = []
-        for p in self._schema.parameters.values():
+        for p in schema.parameters.values():
             params.append(
                 {
                     "name": p.name,
@@ -214,10 +381,11 @@ class VRChatDomainAdapter:
         policy = self._settings.safety.parameter_policy
         allowed = set(self._settings.safety.allowed_parameters)
 
-        schema_param = self._schema.resolve(name) if self._schema is not None else None
+        schema = self._schema_snapshot().schema
+        schema_param = schema.resolve(name) if schema is not None else None
 
         if policy == "strict":
-            if self._schema is None:
+            if schema is None:
                 raise DomainError(
                     code="CAPABILITY_UNAVAILABLE",
                     message="未加载 Avatar schema（LocalLow OSC config）。",
