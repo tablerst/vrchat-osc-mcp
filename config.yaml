@@ -1,13 +1,13 @@
 # vrchat-osc-mcp 默认配置样例
 
 mcp:
-  transport: stdio  # stdio | sse | http
+  transport: http  # stdio | sse | http
   sse:
     host: 127.0.0.1
     port: 8000
   http:
     host: 127.0.0.1
-    port: 8000
+    port: 8001
     path: /mcp
 
 osc:
@@ -15,7 +15,7 @@ osc:
     ip: 127.0.0.1
     port: 9000
   receive:
-    enabled: false
+    enabled: true
     ip: 127.0.0.1
     port: 9001
 
