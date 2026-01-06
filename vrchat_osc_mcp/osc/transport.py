@@ -64,9 +64,15 @@ class OSCTransport:
         self._queue: asyncio.Queue[OSCOutboundMessage] = asyncio.Queue(maxsize=queue_maxsize)
         self._task: asyncio.Task[None] | None = None
         self._throttle = AsyncSlidingWindowThrottle(max_events=osc_per_second, window_s=1.0)
+        self._last_sent_at: float | None = None
 
     def queue_depth(self) -> int:
         return self._queue.qsize()
+
+    def last_sent_ms_ago(self) -> int | None:
+        if self._last_sent_at is None:
+            return None
+        return max(0, int((time.monotonic() - self._last_sent_at) * 1000))
 
     async def start(self) -> None:
         if self._task is not None:
@@ -102,6 +108,7 @@ class OSCTransport:
             try:
                 await self._throttle.throttle()
                 self._client.send_message(msg.address, msg.value)
+                self._last_sent_at = time.monotonic()
                 self._logger.info(
                     "osc.send",
                     trace_id=msg.trace_id,

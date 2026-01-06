@@ -50,7 +50,7 @@
 - Commit messages must follow Angular convention (type/scope/subject):
 	- Suggested scopes: `server` / `mcp` / `osc` / `domain` / `config` / `tests` / `docs` / `chore`
 	- Examples:
-		- `feat(mcp): add vrc_chat_send tool`
+		- `feat(mcp): add vrc_chatbox_send tool`
 		- `fix(domain): enforce axis auto-reset timeout`
 		- `test(osc): assert tap sends 1 then 0`
 

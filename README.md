@@ -38,20 +38,72 @@ CLI 覆盖 YAML：
 - `http`：**推荐**（FastMCP 的 Streamable HTTP），便于多客户端/服务化部署。
 - `sse`：兼容旧 SSE 客户端（不推荐作为新项目默认）。
 
-## 暴露的 MCP 工具（MVP-0）
+## 暴露的 MCP 工具（v1.0）
 
-- `vrc_status`
-- `vrc_list_inputs`（VRChat 官方 /input 轴/按钮清单与作用说明；`vrc_input_*` 会按此清单校验）
-- `vrc_list_parameters`（若已加载 Avatar schema，输出参数能力表）
-- `vrc_set_parameter`（MVP-0 默认 allowlist：allowed_parameters 为空时会拒绝所有参数写入）
-- `vrc_input_tap`（强制复位）
-- `vrc_input_axis`（强制复位 + clamp + duration cap）
-- `vrc_chat_send`（144/9 裁剪 + 限流）
-- `vrc_chat_typing`
+所有工具统一返回 envelope：
+
+- `ok: boolean`
+- `data: object|null`
+- `error: object|null`（`code/message/details`）
+- `trace_id: string`
+
+工具名严格遵循 `vrc_{domain}_{verb}`，并避免点号分组：
+
+### Meta
+
+- `vrc_meta_get_status`
+- `vrc_meta_get_capabilities`
+
+### Input（/input/*，write-only，默认安全收尾）
+
+- `vrc_input_list_endpoints`
+- `vrc_input_set_axes`
+- `vrc_input_tap_buttons`
+- `vrc_input_hold_buttons`
+- `vrc_input_release_buttons`
+- `vrc_input_stop`
+
+### Avatar Parameters（/avatar/parameters/*）
+
+- `vrc_avatar_list_parameters`
+- `vrc_avatar_set_parameter`
+- `vrc_avatar_set_parameters`
+
+### Tracking（OSC Trackers + stream）
+
+- `vrc_tracking_set_tracker_pose`
+- `vrc_tracking_set_head_reference`
+- `vrc_tracking_stream_start`
+- `vrc_tracking_stream_stop`
+
+### Eye（OSC Eye Tracking + keepalive stream）
+
+- `vrc_eye_stream_start`
+- `vrc_eye_set_blink`
+- `vrc_eye_set_gaze`
+- `vrc_eye_stream_stop`
+
+### Chatbox
+
+- `vrc_chatbox_send`
+- `vrc_chatbox_set_typing`
+
+### Global safety
+
+- `vrc_stop_all`
+
+### Macro（高层组合动作）
+
+- `vrc_macro_move_for`
+- `vrc_macro_turn_degrees`
+- `vrc_macro_look_at`
+- `vrc_macro_emote`
+- `vrc_macro_idle`
+- `vrc_macro_stop`
 
 > 命名说明：为兼容 OpenAI 的 tool/function 命名约束，本项目工具名只使用 `[A-Za-z0-9_-]`，不使用点号分组（例如 `vrc.chat.send`）。
 
-> 提示：当 `safety.parameter_policy: strict` 时，`vrc_set_parameter` 会依赖本地 schema（LocalLow 或 `--avatar-config`）来校验参数存在性、类型与可写性，并使用 schema 中的 `input.address` 作为实际发送地址。
+> 提示：当 `safety.parameter_policy: strict` 时，`vrc_avatar_set_parameter` 会依赖本地 schema（LocalLow 或 `--avatar-config`）来校验参数存在性、类型与可写性，并使用 schema 中的 `input.address` 作为实际发送地址。
 
 ## 测试
 

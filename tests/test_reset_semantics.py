@@ -59,7 +59,7 @@ async def test_input_tap_sends_1_then_0():
         await osc.start()
 
         adapter = VRChatDomainAdapter(transport=osc, settings=settings, logger=get_logger().bind(component="test-domain"))
-        await adapter.input_tap(button="Jump", hold_ms=50, trace_id="t")
+        await adapter.input_tap_buttons(buttons=["Jump"], press_ms=50, trace_id="t")
 
         a1, args1 = await asyncio.wait_for(capture.messages.get(), timeout=1)
         a2, args2 = await asyncio.wait_for(capture.messages.get(), timeout=1)
@@ -105,7 +105,7 @@ async def test_input_axis_clamps_and_resets():
         await osc.start()
 
         adapter = VRChatDomainAdapter(transport=osc, settings=settings, logger=get_logger().bind(component="test-domain"))
-        await adapter.input_axis(axis="Vertical", value=2.0, duration_ms=30, trace_id="t")
+        await adapter.input_set_axes(axes={"Vertical": 2.0}, duration_ms=30, auto_zero=True, ease_ms=80, trace_id="t")
 
         a1, args1 = await asyncio.wait_for(capture.messages.get(), timeout=1)
         a2, args2 = await asyncio.wait_for(capture.messages.get(), timeout=1)

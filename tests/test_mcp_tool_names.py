@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from vrchat_osc_mcp.mcp_server import VRC_TOOL_NAMES, _OPENAI_TOOL_NAME_RE, create_server
+from vrchat_osc_mcp.mcp_server import VRC_V1_TOOL_NAMES, _OPENAI_TOOL_NAME_RE, create_server
 
 
 def test_tool_names_are_openai_compatible() -> None:
-    names = list(VRC_TOOL_NAMES.values())
+    names = list(VRC_V1_TOOL_NAMES)
 
     assert len(names) == len(set(names)), "Tool names must be unique"
 
