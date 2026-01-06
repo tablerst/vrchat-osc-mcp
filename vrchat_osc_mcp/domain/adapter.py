@@ -19,18 +19,12 @@ def _clamp_axis(v: float) -> tuple[float, bool]:
     return v, False
 
 
-# VRChat 官方 OSC 输入清单（见 doc.md）。
-# 我们在 domain 层做校验：工具会明确“仅支持这些”，传错时给出可解释错误。
-_INPUT_AXES: dict[str, str] = {
+_SUPPORTED_INPUT_AXES: dict[str, str] = {
+    # v1 按 PLAN.md：先只暴露最常用的 3 个轴（inputSchema 也仅包含这 3 个）。
+    # 官方 doc.md 中还有更多 /input 轴，但我们不在 v1 对外宣称支持，避免 LLM 误用。
     "Vertical": "向前移动(1) / 向后移动(-1)",
     "Horizontal": "向右移动(1) / 向左移动(-1)",
     "LookHorizontal": "向左/向右看；桌面模式下可用于平滑转向；开启舒适转向时 VR 值为 1 会快速转向",
-    "UseAxisRight": "使用手上的物品（不一定有效）",
-    "GrabAxisRight": "抓取物品（不一定有效）",
-    "MoveHoldFB": "向前(1) / 向后(-1) 移动所持对象",
-    "SpinHoldCwCcw": "顺时针/逆时针旋转所持对象",
-    "SpinHoldUD": "向上/向下旋转所持对象",
-    "SpinHoldLR": "向左/向右旋转所持对象",
 }
 
 _INPUT_BUTTONS: dict[str, str] = {
@@ -167,7 +161,7 @@ class VRChatDomainAdapter:
         # refresh 预留给未来：从 /avatar/change 或 receiver 刷新 schema/能力缓存。
         _ = refresh
         return {
-            "input_axes_supported": sorted(_INPUT_AXES.keys()),
+            "input_axes_supported": sorted(_SUPPORTED_INPUT_AXES.keys()),
             "input_buttons_supported": sorted(_INPUT_BUTTONS.keys()),
             "tracking_supported": True,
             "eye_tracking_supported": True,
@@ -213,6 +207,9 @@ class VRChatDomainAdapter:
         reset_value: Any = None,
         trace_id: str,
     ) -> dict[str, Any]:
+        if not isinstance(name, str) or not name.strip():
+            raise DomainError(code="INVALID_ARGUMENT", message="name 必须是非空字符串。")
+
         # Reuse existing safety policy behavior, but with v1.0 error codes.
         policy = self._settings.safety.parameter_policy
         allowed = set(self._settings.safety.allowed_parameters)
@@ -356,11 +353,14 @@ class VRChatDomainAdapter:
     # -----------------
 
     def input_list_endpoints(self) -> dict[str, Any]:
-        return {"axes": sorted(_INPUT_AXES.keys()), "buttons": sorted(_INPUT_BUTTONS.keys())}
+        return {"axes": sorted(_SUPPORTED_INPUT_AXES.keys()), "buttons": sorted(_INPUT_BUTTONS.keys())}
 
     async def input_tap_buttons(self, *, buttons: list[str], press_ms: int = 80, trace_id: str) -> dict[str, Any]:
         if not buttons:
             raise DomainError(code="INVALID_ARGUMENT", message="buttons 不能为空。")
+
+        if len(buttons) > 10:
+            raise DomainError(code="INVALID_ARGUMENT", message="buttons 数量过多（最大 10）。", details={"max": 10, "given": len(buttons)})
 
         press_ms_i = int(press_ms)
         if press_ms_i < 20:
@@ -386,6 +386,9 @@ class VRChatDomainAdapter:
         if not buttons:
             raise DomainError(code="INVALID_ARGUMENT", message="buttons 不能为空。")
 
+        if len(buttons) > 10:
+            raise DomainError(code="INVALID_ARGUMENT", message="buttons 数量过多（最大 10）。", details={"max": 10, "given": len(buttons)})
+
         held: list[str] = []
         for raw in buttons:
             name = _resolve_supported_input(raw=raw, allowed=_INPUT_BUTTONS, kind="button")
@@ -398,6 +401,9 @@ class VRChatDomainAdapter:
     async def input_release_buttons(self, *, buttons: list[str], trace_id: str) -> dict[str, Any]:
         if not buttons:
             raise DomainError(code="INVALID_ARGUMENT", message="buttons 不能为空。")
+
+        if len(buttons) > 10:
+            raise DomainError(code="INVALID_ARGUMENT", message="buttons 数量过多（最大 10）。", details={"max": 10, "given": len(buttons)})
 
         released: list[str] = []
         for raw in buttons:
@@ -420,7 +426,7 @@ class VRChatDomainAdapter:
         if not isinstance(axes, dict):
             raise DomainError(code="INVALID_ARGUMENT", message="axes 必须是对象。")
 
-        allowed_axes = {"Vertical", "Horizontal", "LookHorizontal"}
+        allowed_axes = set(_SUPPORTED_INPUT_AXES.keys())
         unknown = [k for k in axes.keys() if k not in allowed_axes]
         if unknown:
             raise DomainError(
@@ -428,6 +434,20 @@ class VRChatDomainAdapter:
                 message="axes 包含不支持的字段。",
                 details={"unknown": sorted(unknown), "supported": sorted(allowed_axes)},
             )
+
+        if duration_ms is None:
+            duration_ms = 0
+        if not isinstance(duration_ms, int):
+            raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 必须是整数。")
+        if duration_ms < 0:
+            raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 不能为负数。", details={"duration_ms": duration_ms})
+
+        if ease_ms is None:
+            ease_ms = 80
+        if not isinstance(ease_ms, int):
+            raise DomainError(code="INVALID_ARGUMENT", message="ease_ms 必须是整数。")
+        if ease_ms < 0 or ease_ms > 500:
+            raise DomainError(code="INVALID_ARGUMENT", message="ease_ms 必须在 [0,500]。", details={"ease_ms": ease_ms})
 
         # Normalize and clamp
         to_send: dict[str, float] = {}
@@ -440,10 +460,15 @@ class VRChatDomainAdapter:
         if not to_send:
             raise DomainError(code="INVALID_ARGUMENT", message="axes 不能为空对象。")
 
-        # duration safety: if auto_zero, enforce bounded duration (default to ease_ms)
-        effective_dur = int(duration_ms) if duration_ms is not None else 0
-        if auto_zero and effective_dur <= 0:
-            effective_dur = int(ease_ms) if ease_ms is not None else 80
+        # Safety valve (doc.md): axes should reset to 0 when not in use.
+        # 为避免“永动机式前进”，即便调用方传 auto_zero=false，我们仍会做一个有界的强制归零。
+        requested_auto_zero = bool(auto_zero)
+        enforced_auto_zero = True
+
+        # duration safety: enforce bounded duration (default to ease_ms)
+        effective_dur = int(duration_ms)
+        if effective_dur <= 0:
+            effective_dur = int(ease_ms)
 
         max_dur = int(self._settings.safety.max_axis_duration_ms)
         if effective_dur > max_dur:
@@ -453,18 +478,19 @@ class VRChatDomainAdapter:
         try:
             for axis_name, vv in to_send.items():
                 await self._transport.send(address=f"/input/{axis_name}", value=vv, trace_id=trace_id)
-            if auto_zero:
+            if enforced_auto_zero:
                 await asyncio.sleep(max(0, effective_dur) / 1000)
         finally:
-            if auto_zero:
+            if enforced_auto_zero:
                 for axis_name in to_send.keys():
                     await asyncio.shield(self._transport.send(address=f"/input/{axis_name}", value=0.0, trace_id=trace_id))
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return {
             "axes": to_send,
-            "duration_ms": effective_dur if auto_zero else 0,
-            "auto_zero": bool(auto_zero),
+            "duration_ms": effective_dur,
+            "requested_auto_zero": requested_auto_zero,
+            "enforced_auto_zero": enforced_auto_zero,
             "ease_ms": int(ease_ms),
             "elapsed_ms": elapsed_ms,
         }
@@ -493,6 +519,9 @@ class VRChatDomainAdapter:
         set_typing: bool = False,
         trace_id: str,
     ) -> dict[str, Any]:
+        if not isinstance(text, str) or not text.strip():
+            raise DomainError(code="INVALID_ARGUMENT", message="text 必须是非空字符串。")
+
         decision = self._chat_limiter.check()
         if not decision.allowed:
             raise DomainError(
@@ -507,12 +536,16 @@ class VRChatDomainAdapter:
             await self.chatbox_set_typing(is_typing=True, trace_id=trace_id)
 
         address = "/chatbox/input"
-        # VRChat expects: (text: str, immediate: bool, notify: bool)
-        await self._transport.send(
-            address=address,
-            value=[trimmed, bool(send_immediately), bool(notify)],
-            trace_id=trace_id,
-        )
+        # doc.md: /chatbox/input s b n
+        # - b=True: 立即发送（bypass keyboard）
+        # - b=False: 打开键盘并填充文本
+        # - n 可选；仅在立即发送时用于控制通知音效
+        if bool(send_immediately):
+            value = [trimmed, True, bool(notify)]
+        else:
+            value = [trimmed, False]
+
+        await self._transport.send(address=address, value=value, trace_id=trace_id)
 
         # If we bypass keyboard and immediately send, we can clear typing.
         if set_typing and send_immediately:
@@ -605,6 +638,13 @@ class VRChatDomainAdapter:
         neutral_on_stop: bool,
         trace_id: str,
     ) -> dict[str, Any]:
+        if fps not in {20, 30, 45, 60}:
+            raise DomainError(code="INVALID_ARGUMENT", message="fps 必须是 20/30/45/60。", details={"fps": fps})
+        if not isinstance(enabled_trackers, list) or not enabled_trackers:
+            raise DomainError(code="INVALID_ARGUMENT", message="enabled_trackers 不能为空。")
+        if len(enabled_trackers) > 8:
+            raise DomainError(code="INVALID_ARGUMENT", message="enabled_trackers 最多 8 个。", details={"max": 8, "given": len(enabled_trackers)})
+
         # Validate tracker names early
         for t in enabled_trackers:
             tracker_to_osc_index(t)
@@ -621,6 +661,8 @@ class VRChatDomainAdapter:
     # -----------------
 
     async def eye_stream_start(self, *, fps: int, gaze_mode: str, neutral_on_stop: bool, trace_id: str) -> dict[str, Any]:
+        if fps not in {20, 30, 45, 60}:
+            raise DomainError(code="INVALID_ARGUMENT", message="fps 必须是 20/30/45/60。", details={"fps": fps})
         gaze_mode = validate_gaze_mode(gaze_mode)
         stream_id = await self._eye_stream.start(fps=fps, gaze_mode=gaze_mode, neutral_on_stop=neutral_on_stop)
         return {"running": True, "stream_id": stream_id, "fps": fps, "mode": gaze_mode}
@@ -647,7 +689,9 @@ class VRChatDomainAdapter:
             if gaze_mode == "CenterPitchYaw":
                 args = [float(data["pitch"]), float(data["yaw"])]
             elif gaze_mode == "CenterPitchYawDist":
-                args = [float(data["pitch"]), float(data["yaw"]), float(data["distance_m"])]
+                # 官方文档字段是 distance（米）。为兼容，我们同时接受 distance 或 distance_m。
+                dist = data["distance_m"] if "distance_m" in data else data["distance"]
+                args = [float(data["pitch"]), float(data["yaw"]), float(dist)]
             elif gaze_mode in {"CenterVec", "CenterVecFull"}:
                 args = [float(data["x"]), float(data["y"]), float(data["z"])]
             elif gaze_mode == "LeftRightPitchYaw":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import re
 import uuid
 from typing import Any
@@ -175,7 +176,27 @@ def create_server(*, adapter) -> FastMCP:
                 f"Invalid MCP tool name: {name!r}. "
                 "Tool names must match ^[A-Za-z0-9_-]{1,64}$."
             )
-        return mcp.tool(name=name, **kwargs)
+
+        def _decorator(fn):
+            # Do not expose MCP Context injection params to clients.
+            # (Per user contract: trace_id is output-only; ctx should not appear in inputSchema.)
+            tool_kwargs = dict(kwargs)
+            try:
+                sig = inspect.signature(fn)
+                if "ctx" in sig.parameters:
+                    tool_kwargs.setdefault("exclude_args", ["ctx"])
+            except Exception:
+                # If we cannot inspect, just proceed without exclude_args.
+                pass
+
+            # Back-compat: older fastmcp versions may not support exclude_args.
+            try:
+                return mcp.tool(name=name, **tool_kwargs)(fn)
+            except TypeError:
+                tool_kwargs.pop("exclude_args", None)
+                return mcp.tool(name=name, **tool_kwargs)(fn)
+
+        return _decorator
 
     # -----------------
     # Meta
@@ -277,8 +298,13 @@ def create_server(*, adapter) -> FastMCP:
                 trace_id=trace_id,
                 error_obj={"code": "INVALID_ARGUMENT", "message": "space 仅支持 unity。", "details": {"space": space}},
             )
+        if blend_ms < 0 or blend_ms > 1000:
+            trace_id = _trace_id(ctx)
+            return _err(
+                trace_id=trace_id,
+                error_obj={"code": "INVALID_ARGUMENT", "message": "blend_ms 必须在 [0,1000]。", "details": {"blend_ms": blend_ms}},
+            )
         # blend_ms currently accepted but not applied (reserved)
-        _ = blend_ms
         return await _wrap_async(adapter.tracking_set_tracker_pose)(
             tracker=tracker,
             position_m=position_m,
@@ -307,6 +333,12 @@ def create_server(*, adapter) -> FastMCP:
         neutral_on_stop: bool = True,
         ctx: Context | None = None,
     ) -> dict:
+        if fps not in (20, 30, 45, 60):
+            trace_id = _trace_id(ctx)
+            return _err(
+                trace_id=trace_id,
+                error_obj={"code": "INVALID_ARGUMENT", "message": "fps 必须是 20/30/45/60。", "details": {"fps": fps}},
+            )
         if enabled_trackers is None:
             enabled_trackers = ["hip", "left_foot", "right_foot"]
         return await _wrap_async(adapter.tracking_stream_start)(
@@ -331,6 +363,12 @@ def create_server(*, adapter) -> FastMCP:
         neutral_on_stop: bool = True,
         ctx: Context | None = None,
     ) -> dict:
+        if fps not in (20, 30, 45, 60):
+            trace_id = _trace_id(ctx)
+            return _err(
+                trace_id=trace_id,
+                error_obj={"code": "INVALID_ARGUMENT", "message": "fps 必须是 20/30/45/60。", "details": {"fps": fps}},
+            )
         return await _wrap_async(adapter.eye_stream_start)(fps=fps, gaze_mode=gaze_mode, neutral_on_stop=neutral_on_stop, ctx=ctx)
 
     @_tool(name="vrc_eye_set_blink", output_schema=_ENVELOPE_OUTPUT_SCHEMA)
@@ -390,6 +428,11 @@ def create_server(*, adapter) -> FastMCP:
         ctx: Context | None = None,
     ) -> dict:
         async def _impl(*, trace_id: str):
+            if duration_ms < 50 or duration_ms > 30000:
+                raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 必须在 [50,30000]。", details={"duration_ms": duration_ms})
+            for name, v in ("forward", forward), ("strafe", strafe), ("turn", turn):
+                if v < -1 or v > 1:
+                    raise DomainError(code="INVALID_ARGUMENT", message=f"{name} 必须在 [-1,1]。", details={name: v})
             return await adapter.input_set_axes(
                 axes={"Vertical": forward, "Horizontal": strafe, "LookHorizontal": turn},
                 duration_ms=duration_ms,
@@ -430,6 +473,12 @@ def create_server(*, adapter) -> FastMCP:
         ctx: Context | None = None,
     ) -> dict:
         async def _impl(*, trace_id: str):
+            if yaw_deg < -90 or yaw_deg > 90:
+                raise DomainError(code="INVALID_ARGUMENT", message="yaw_deg 必须在 [-90,90]。", details={"yaw_deg": yaw_deg})
+            if pitch_deg < -45 or pitch_deg > 45:
+                raise DomainError(code="INVALID_ARGUMENT", message="pitch_deg 必须在 [-45,45]。", details={"pitch_deg": pitch_deg})
+            if duration_ms < 50 or duration_ms > 10000:
+                raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 必须在 [50,10000]。", details={"duration_ms": duration_ms})
             if prefer_eye:
                 # Ensure eye stream is running (idempotent if already started).
                 try:
