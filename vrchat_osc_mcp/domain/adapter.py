@@ -169,8 +169,16 @@ class VRChatDomainAdapter:
         )
 
         # Background streams (tracking/eye)
-        self._tracking_stream = TrackingStream(transport=transport, logger=logger.bind(component="tracking-stream"))
-        self._eye_stream = EyeStream(transport=transport, logger=logger.bind(component="eye-stream"))
+        self._tracking_stream = TrackingStream(
+            transport=transport,
+            logger=logger.bind(component="tracking-stream"),
+            target_ttl_ms=int(settings.safety.tracking_target_ttl_ms),
+        )
+        self._eye_stream = EyeStream(
+            transport=transport,
+            logger=logger.bind(component="eye-stream"),
+            target_ttl_ms=int(settings.safety.eye_target_ttl_ms),
+        )
 
     def _schema_snapshot(self) -> "_SchemaState":
         # Copy-on-read snapshot: this reference is treated as immutable.

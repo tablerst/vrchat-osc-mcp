@@ -35,6 +35,11 @@ safety:
   max_axis_duration_ms: 2000
   max_button_hold_ms: 1000
 
+  # Stream safety valves：后台流在长时间未更新目标值时自动回中立。
+  # 0 表示禁用 TTL（将一直保持最后一次目标值）。
+  tracking_target_ttl_ms: 10000
+  eye_target_ttl_ms: 10000
+
   # MVP-0: 默认 allowlist（安全起见，allowed_parameters 为空时会拒绝所有参数写入）
   parameter_policy: allowlist  # strict | allowlist | permissive
   allowed_parameters: []

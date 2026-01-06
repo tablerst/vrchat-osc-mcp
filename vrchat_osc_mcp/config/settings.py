@@ -76,6 +76,12 @@ class SafetySettings(BaseModel):
     max_axis_duration_ms: int = Field(2000, ge=50, le=5000)
     max_button_hold_ms: int = Field(1000, ge=20, le=5000)
 
+    # Stream safety valves (tracking/eye)
+    # 当后台流在 RUNNING 且调用方长时间不再更新目标值时，自动回到中立值，避免“忘记 stop 导致持续施加影响”。
+    # 0 表示禁用 TTL（将一直保持最后一次目标值）。
+    tracking_target_ttl_ms: int = Field(10_000, ge=0, le=600_000)
+    eye_target_ttl_ms: int = Field(10_000, ge=0, le=600_000)
+
     # Parameter policy (MVP-0 uses allowlist; MVP-1 upgrades to schema-backed strict)
     parameter_policy: Literal["strict", "allowlist", "permissive"] = "allowlist"
     allowed_parameters: list[str] = Field(default_factory=list)

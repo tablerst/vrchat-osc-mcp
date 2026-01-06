@@ -51,7 +51,7 @@ def _sleep_interval_s(fps: int) -> float:
 
 
 class TrackingStream:
-    def __init__(self, *, transport, logger) -> None:
+    def __init__(self, *, transport, logger, target_ttl_ms: int = 10_000) -> None:
         self._transport = transport
         self._logger = logger
 
@@ -63,8 +63,12 @@ class TrackingStream:
         self._enabled_trackers: list[str] = []
         self._neutral_on_stop: bool = True
 
+        # If >0, targets older than this TTL will be neutralized and cleared.
+        self._target_ttl_s: float = max(0.0, float(target_ttl_ms) / 1000.0)
+
         # Target pose per tracker: {tracker: {"pos": (x,y,z), "rot": (x,y,z)}}
         self._targets: dict[str, dict[str, tuple[float, float, float]]] = {}
+        self._target_updated_at: dict[str, float] = {}
 
         # Optional head reference (used for alignment)
         self._head_pos: tuple[float, float, float] | None = None
@@ -72,6 +76,7 @@ class TrackingStream:
         self._head_mode: Literal["single_align", "stream_align"] = "stream_align"
         self._head_rotation_suppress_until: float = 0.0
         self._last_single_align_sent_at: float | None = None
+        self._head_updated_at: float | None = None
 
     def status(self) -> StreamStatus:
         return StreamStatus(
@@ -91,6 +96,7 @@ class TrackingStream:
         tracker_to_osc_index(tracker)
         self._targets.setdefault(tracker, {})["pos"] = position_m
         self._targets.setdefault(tracker, {})["rot"] = rotation_euler_deg
+        self._target_updated_at[tracker] = time.monotonic()
 
     async def set_head_reference(
         self,
@@ -103,6 +109,7 @@ class TrackingStream:
         self._head_pos = position_m
         self._head_rot = rotation_euler_deg
         self._head_mode = mode
+        self._head_updated_at = time.monotonic()
 
         # Per VRChat doc: if only a single head rotation message is sent and no
         # second arrives within 300ms, it is treated as one-time instant alignment.
@@ -145,6 +152,13 @@ class TrackingStream:
         self._fps = int(fps)
         self._enabled_trackers = list(enabled_trackers)
         self._neutral_on_stop = bool(neutral_on_stop)
+
+        # Treat any pre-existing targets as fresh upon start.
+        now = time.monotonic()
+        for t in self._targets.keys():
+            self._target_updated_at[t] = now
+        if self._head_pos is not None or self._head_rot is not None:
+            self._head_updated_at = now
 
         self._state = "RUNNING"
         self._stream_id = str(uuid.uuid4())
@@ -189,6 +203,8 @@ class TrackingStream:
     async def _run(self) -> None:
         interval = _sleep_interval_s(self._fps)
         while True:
+            now = time.monotonic()
+
             # Trackers
             for tracker in self._enabled_trackers:
                 idx = tracker_to_osc_index(tracker)
@@ -196,16 +212,50 @@ class TrackingStream:
                 if not t:
                     continue
 
+                # Safety: auto-neutralize stale targets.
+                if self._target_ttl_s > 0:
+                    updated_at = self._target_updated_at.get(tracker)
+                    if updated_at is None or (now - updated_at) > self._target_ttl_s:
+                        await self._transport.send(
+                            address=f"/tracking/trackers/{idx}/position",
+                            value=[0.0, 0.0, 0.0],
+                            trace_id=self._stream_id or "",
+                        )
+                        await self._transport.send(
+                            address=f"/tracking/trackers/{idx}/rotation",
+                            value=[0.0, 0.0, 0.0],
+                            trace_id=self._stream_id or "",
+                        )
+                        self._targets.pop(tracker, None)
+                        self._target_updated_at.pop(tracker, None)
+                        continue
+
                 if (pos := t.get("pos")) is not None:
                     await self._transport.send(address=f"/tracking/trackers/{idx}/position", value=list(pos), trace_id=self._stream_id or "")
                 if (rot := t.get("rot")) is not None:
                     await self._transport.send(address=f"/tracking/trackers/{idx}/rotation", value=list(rot), trace_id=self._stream_id or "")
 
             # Head reference
+            if (self._head_pos is not None or self._head_rot is not None) and self._target_ttl_s > 0:
+                if self._head_updated_at is None or (now - self._head_updated_at) > self._target_ttl_s:
+                    # Auto-neutralize stale head reference.
+                    await self._transport.send(
+                        address="/tracking/trackers/head/position",
+                        value=[0.0, 0.0, 0.0],
+                        trace_id=self._stream_id or "",
+                    )
+                    await self._transport.send(
+                        address="/tracking/trackers/head/rotation",
+                        value=[0.0, 0.0, 0.0],
+                        trace_id=self._stream_id or "",
+                    )
+                    self._head_pos = None
+                    self._head_rot = None
+                    self._head_updated_at = None
+
             if self._head_pos is not None:
                 await self._transport.send(address="/tracking/trackers/head/position", value=list(self._head_pos), trace_id=self._stream_id or "")
 
-            now = time.monotonic()
             if self._head_rot is not None and self._head_mode == "stream_align" and now >= self._head_rotation_suppress_until:
                 await self._transport.send(address="/tracking/trackers/head/rotation", value=list(self._head_rot), trace_id=self._stream_id or "")
 
@@ -250,7 +300,7 @@ def _neutral_gaze_args(mode: str) -> list[float]:
 
 
 class EyeStream:
-    def __init__(self, *, transport, logger) -> None:
+    def __init__(self, *, transport, logger, target_ttl_ms: int = 10_000) -> None:
         self._transport = transport
         self._logger = logger
 
@@ -262,8 +312,14 @@ class EyeStream:
         self._gaze_mode: str = "CenterPitchYaw"
         self._neutral_on_stop: bool = True
 
+        # If >0, blink/gaze targets older than this TTL will revert to neutral.
+        self._target_ttl_s: float = max(0.0, float(target_ttl_ms) / 1000.0)
+
         self._blink_amount: float = 0.0
         self._gaze_args: list[float] = _neutral_gaze_args("CenterPitchYaw")
+
+        self._blink_updated_at: float | None = None
+        self._gaze_updated_at: float | None = None
 
     def status(self) -> StreamStatus:
         return StreamStatus(
@@ -280,6 +336,7 @@ class EyeStream:
         if not (0.0 <= amount <= 1.0):
             raise DomainError(code="INVALID_ARGUMENT", message="blink amount 必须在 [0,1]。", details={"amount": amount})
         self._blink_amount = float(amount)
+        self._blink_updated_at = time.monotonic()
 
     def set_gaze(self, *, gaze_mode: str, args: list[float]) -> None:
         gaze_mode = validate_gaze_mode(gaze_mode)
@@ -293,6 +350,7 @@ class EyeStream:
 
         self._gaze_mode = gaze_mode
         self._gaze_args = list(args)
+        self._gaze_updated_at = time.monotonic()
 
     async def start(self, *, fps: int, gaze_mode: str, neutral_on_stop: bool) -> str:
         gaze_mode = validate_gaze_mode(gaze_mode)
@@ -313,6 +371,13 @@ class EyeStream:
         self._fps = int(fps)
         self._gaze_mode = gaze_mode
         self._neutral_on_stop = bool(neutral_on_stop)
+
+        # Treat pre-existing targets as fresh upon start.
+        now = time.monotonic()
+        if self._blink_updated_at is not None:
+            self._blink_updated_at = now
+        if self._gaze_updated_at is not None:
+            self._gaze_updated_at = now
 
         # Ensure we have a gaze payload matching the configured mode
         if self._gaze_args is None or len(self._gaze_args) == 0:
@@ -354,6 +419,17 @@ class EyeStream:
     async def _run(self) -> None:
         interval = _sleep_interval_s(self._fps)
         while True:
+            now = time.monotonic()
+
+            # Safety: auto-revert stale targets to neutral even if the stream keeps running.
+            if self._target_ttl_s > 0:
+                if self._blink_updated_at is not None and (now - self._blink_updated_at) > self._target_ttl_s:
+                    self._blink_amount = 0.0
+                    self._blink_updated_at = None
+                if self._gaze_updated_at is not None and (now - self._gaze_updated_at) > self._target_ttl_s:
+                    self._gaze_args = _neutral_gaze_args(self._gaze_mode)
+                    self._gaze_updated_at = None
+
             # Eyelids keepalive (timeout is separate)
             await self._transport.send(
                 address="/tracking/eye/EyesClosedAmount",
