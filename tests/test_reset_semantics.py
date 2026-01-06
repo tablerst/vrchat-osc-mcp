@@ -119,3 +119,61 @@ async def test_input_axis_clamps_and_resets():
         if osc is not None:
             await osc.close()
         transport.close()
+
+
+@pytest.mark.asyncio
+async def test_input_set_multiple_axes_sends_all_and_resets():
+    configure_logging(level="ERROR", json_logs=True)
+
+    capture = OscCapture()
+    dispatcher = Dispatcher()
+    dispatcher.set_default_handler(capture.handler)
+
+    port = _free_udp_port()
+    server = AsyncIOOSCUDPServer(("127.0.0.1", port), dispatcher, asyncio.get_running_loop())
+    transport, _protocol = await server.create_serve_endpoint()
+
+    osc = None
+    try:
+        settings = Settings.model_validate(
+            {
+                "osc": {"send": {"ip": "127.0.0.1", "port": port}},
+                "safety": {"osc_per_second": 500, "max_axis_duration_ms": 2000},
+            }
+        )
+
+        osc = OSCTransport(
+            send_ip=settings.osc.send.ip,
+            send_port=settings.osc.send.port,
+            osc_per_second=settings.safety.osc_per_second,
+            logger=get_logger().bind(component="test-osc"),
+        )
+        await osc.start()
+
+        adapter = VRChatDomainAdapter(transport=osc, settings=settings, logger=get_logger().bind(component="test-domain"))
+        await adapter.input_set_axes(
+            axes={"Vertical": 1.0, "Horizontal": -1.0, "LookHorizontal": 0.5},
+            duration_ms=30,
+            auto_zero=True,
+            ease_ms=80,
+            trace_id="t",
+        )
+
+        received: list[tuple[str, tuple]] = []
+        for _ in range(6):
+            received.append(await asyncio.wait_for(capture.messages.get(), timeout=1))
+
+        # We don't rely on strict ordering here (UDP + bundle unpacking), only on presence.
+        sent = {(addr, args) for addr, args in received}
+        assert ("/input/Vertical", (1.0,)) in sent
+        assert ("/input/Horizontal", (-1.0,)) in sent
+        assert ("/input/LookHorizontal", (0.5,)) in sent
+
+        assert ("/input/Vertical", (0.0,)) in sent
+        assert ("/input/Horizontal", (0.0,)) in sent
+        assert ("/input/LookHorizontal", (0.0,)) in sent
+
+    finally:
+        if osc is not None:
+            await osc.close()
+        transport.close()

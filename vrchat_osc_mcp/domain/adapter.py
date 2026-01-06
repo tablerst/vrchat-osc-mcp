@@ -644,14 +644,24 @@ class VRChatDomainAdapter:
 
         start = time.monotonic()
         try:
-            for axis_name, vv in to_send.items():
-                await self._transport.send(address=f"/input/{axis_name}", value=vv, trace_id=trace_id)
+            # Prefer a single OSC bundle for multi-axis updates.
+            # Rationale: reduce UDP packet count and keep axes temporally aligned.
+            items = [(f"/input/{axis_name}", vv) for axis_name, vv in to_send.items()]
+            if len(items) > 1 and hasattr(self._transport, "send_bundle"):
+                await self._transport.send_bundle(items=items, trace_id=trace_id)
+            else:
+                for address, vv in items:
+                    await self._transport.send(address=address, value=vv, trace_id=trace_id)
             if enforced_auto_zero:
                 await asyncio.sleep(max(0, effective_dur) / 1000)
         finally:
             if enforced_auto_zero:
-                for axis_name in to_send.keys():
-                    await asyncio.shield(self._transport.send(address=f"/input/{axis_name}", value=0.0, trace_id=trace_id))
+                reset_items = [(f"/input/{axis_name}", 0.0) for axis_name in to_send.keys()]
+                if len(reset_items) > 1 and hasattr(self._transport, "send_bundle"):
+                    await asyncio.shield(self._transport.send_bundle(items=reset_items, trace_id=trace_id))
+                else:
+                    for address, vv in reset_items:
+                        await asyncio.shield(self._transport.send(address=address, value=vv, trace_id=trace_id))
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return {

@@ -6,6 +6,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
+from pythonosc.osc_bundle_builder import IMMEDIATELY, OscBundleBuilder
+from pythonosc.osc_message_builder import OscMessageBuilder
 from pythonosc.udp_client import SimpleUDPClient
 
 
@@ -13,6 +15,14 @@ from pythonosc.udp_client import SimpleUDPClient
 class OSCOutboundMessage:
     address: str
     value: Any
+    trace_id: str
+    created_at: float
+
+
+@dataclass(frozen=True)
+class OSCOutboundBundle:
+    bundle: Any  # pythonosc.osc_bundle.OscBundle
+    items: list[tuple[str, Any]]
     trace_id: str
     created_at: float
 
@@ -61,7 +71,7 @@ class OSCTransport:
     ) -> None:
         self._client = SimpleUDPClient(send_ip, send_port)
         self._logger = logger
-        self._queue: asyncio.Queue[OSCOutboundMessage] = asyncio.Queue(maxsize=queue_maxsize)
+        self._queue: asyncio.Queue[OSCOutboundMessage | OSCOutboundBundle] = asyncio.Queue(maxsize=queue_maxsize)
         self._task: asyncio.Task[None] | None = None
         self._throttle = AsyncSlidingWindowThrottle(max_events=osc_per_second, window_s=1.0)
         self._last_sent_at: float | None = None
@@ -94,6 +104,30 @@ class OSCTransport:
         msg = OSCOutboundMessage(address=address, value=value, trace_id=trace_id, created_at=time.monotonic())
         await self._queue.put(msg)
 
+    async def send_bundle(self, *, items: list[tuple[str, Any]], trace_id: str) -> None:
+        """Send multiple OSC messages as a single OSC bundle.
+
+        `value` 语义与 send_message 一致：
+        - value 为 list/tuple => 多参数
+        - 其他 => 单参数
+        """
+        if not items:
+            return
+
+        b = OscBundleBuilder(IMMEDIATELY)
+        for address, value in items:
+            mb = OscMessageBuilder(address=address)
+            if isinstance(value, (list, tuple)):
+                for v in value:
+                    mb.add_arg(v)
+            else:
+                mb.add_arg(value)
+            b.add_content(mb.build())
+
+        bundle = b.build()
+        out = OSCOutboundBundle(bundle=bundle, items=list(items), trace_id=trace_id, created_at=time.monotonic())
+        await self._queue.put(out)
+
     async def flush(self, *, timeout_s: float = 2.0) -> None:
         """Best-effort wait until the queue is drained."""
         deadline = time.monotonic() + timeout_s
@@ -107,13 +141,23 @@ class OSCTransport:
             msg = await self._queue.get()
             try:
                 await self._throttle.throttle()
-                self._client.send_message(msg.address, msg.value)
-                self._last_sent_at = time.monotonic()
-                self._logger.info(
-                    "osc.send",
-                    trace_id=msg.trace_id,
-                    osc_address=msg.address,
-                    osc_value=msg.value,
-                )
+                if isinstance(msg, OSCOutboundBundle):
+                    self._client.send(msg.bundle)
+                    self._last_sent_at = time.monotonic()
+                    self._logger.info(
+                        "osc.send_bundle",
+                        trace_id=msg.trace_id,
+                        osc_count=len(msg.items),
+                        osc_addresses=[a for a, _ in msg.items],
+                    )
+                else:
+                    self._client.send_message(msg.address, msg.value)
+                    self._last_sent_at = time.monotonic()
+                    self._logger.info(
+                        "osc.send",
+                        trace_id=msg.trace_id,
+                        osc_address=msg.address,
+                        osc_value=msg.value,
+                    )
             finally:
                 self._queue.task_done()
