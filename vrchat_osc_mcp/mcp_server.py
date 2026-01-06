@@ -760,8 +760,23 @@ def create_server(*, adapter) -> FastMCP:
             for name, v in ("forward", forward), ("strafe", strafe), ("turn", turn):
                 if v < -1 or v > 1:
                     raise DomainError(code="INVALID_ARGUMENT", message=f"{name} 必须在 [-1,1]。", details={name: v})
+
+            # Only include axes the caller actually wants to drive.
+            # This avoids unintentionally clobbering other concurrent inputs
+            # (e.g., turning via another tool while this macro only moves forward).
+            axes: dict[str, float] = {}
+            if forward != 0:
+                axes["Vertical"] = float(forward)
+            if strafe != 0:
+                axes["Horizontal"] = float(strafe)
+            if turn != 0:
+                axes["LookHorizontal"] = float(turn)
+
+            if not axes:
+                return {"no_op": True, "reason": "all_axes_zero"}
+
             return await adapter.input_set_axes(
-                axes={"Vertical": forward, "Horizontal": strafe, "LookHorizontal": turn},
+                axes=axes,
                 duration_ms=duration_ms,
                 auto_zero=True,
                 ease_ms=80,
