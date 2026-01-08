@@ -18,14 +18,19 @@ from .vrc_config.resolver import resolve_avatar_config_path
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="vrchat-osc-mcp")
 
-    p.add_argument("--config", type=Path, default=None, help="YAML 配置文件路径（默认探测 ./config.yaml 或 ./config/config.yaml）")
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to YAML config file (default: auto-detect ./config.yaml or ./config/config.yaml)",
+    )
     p.add_argument("--transport", choices=["stdio", "sse", "http"], default=None)
 
     p.add_argument("--osc-send-ip", default=None)
     p.add_argument("--osc-send-port", type=int, default=None)
 
-    p.add_argument("--enable-receiver", action="store_true", help="启用 OSC receiver（MVP-0 默认不启动）")
-    p.add_argument("--no-receiver", action="store_true", help="禁用 OSC receiver")
+    p.add_argument("--enable-receiver", action="store_true", help="Enable OSC receiver (MVP-0: disabled by default)")
+    p.add_argument("--no-receiver", action="store_true", help="Disable OSC receiver")
     p.add_argument("--osc-receive-ip", default=None)
     p.add_argument("--osc-receive-port", type=int, default=None)
 
@@ -39,7 +44,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default=None)
 
     p.add_argument("--vrchat-osc-root", type=Path, default=None)
-    p.add_argument("--avatar-config", type=Path, default=None, help="显式指定 Avatar OSC config JSON（avtr_*.json）；用于 schema 严格校验")
+    p.add_argument(
+        "--avatar-config",
+        type=Path,
+        default=None,
+        help="Explicit path to Avatar OSC config JSON (avtr_*.json); used for strict schema validation",
+    )
 
     return p
 
@@ -75,7 +85,7 @@ def _cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
 
     # Receiver tri-state: CLI overrides YAML when explicitly specified.
     if args.enable_receiver and args.no_receiver:
-        raise SystemExit("--enable-receiver 与 --no-receiver 不能同时使用")
+        raise SystemExit("--enable-receiver and --no-receiver cannot be used together")
 
     if args.enable_receiver or args.no_receiver or args.osc_receive_ip is not None or args.osc_receive_port is not None:
         o.setdefault("osc", {}).setdefault("receive", {})
@@ -167,7 +177,7 @@ async def _run(settings) -> None:
                 bind_ip=settings.osc.receive.ip,
                 bind_port=settings.osc.receive.port,
                 error=str(e),
-                hint="该端口可能被其它 OSC 工具占用；可以关闭 receiver 或改用其它端口。",
+                hint="This port may be in use by another OSC tool; you can disable the receiver or use a different port.",
             )
 
     logger.info(

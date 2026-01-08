@@ -77,8 +77,9 @@ class SafetySettings(BaseModel):
     max_button_hold_ms: int = Field(1000, ge=20, le=5000)
 
     # Stream safety valves (tracking/eye)
-    # 当后台流在 RUNNING 且调用方长时间不再更新目标值时，自动回到中立值，避免“忘记 stop 导致持续施加影响”。
-    # 0 表示禁用 TTL（将一直保持最后一次目标值）。
+    # When background streams are RUNNING and caller stops updating target values for extended period,
+    # automatically revert to neutral to avoid "forgot to stop, causing persistent effect".
+    # 0 = disable TTL (keeps last target value indefinitely).
     tracking_target_ttl_ms: int = Field(10_000, ge=0, le=600_000)
     eye_target_ttl_ms: int = Field(10_000, ge=0, le=600_000)
 

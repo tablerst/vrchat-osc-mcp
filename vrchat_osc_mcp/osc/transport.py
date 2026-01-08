@@ -107,9 +107,9 @@ class OSCTransport:
     async def send_bundle(self, *, items: list[tuple[str, Any]], trace_id: str) -> None:
         """Send multiple OSC messages as a single OSC bundle.
 
-        `value` 语义与 send_message 一致：
-        - value 为 list/tuple => 多参数
-        - 其他 => 单参数
+        `value` semantics match send_message:
+        - value is a list/tuple => multiple arguments
+        - otherwise => single argument
         """
         if not items:
             return

@@ -23,34 +23,34 @@ def _clamp_axis(v: float) -> tuple[float, bool]:
 
 
 _SUPPORTED_INPUT_AXES: dict[str, str] = {
-    # v1 按 PLAN.md：先只暴露最常用的 3 个轴（inputSchema 也仅包含这 3 个）。
-    # 官方 doc.md 中还有更多 /input 轴，但我们不在 v1 对外宣称支持，避免 LLM 误用。
-    "Vertical": "向前移动(1) / 向后移动(-1)",
-    "Horizontal": "向右移动(1) / 向左移动(-1)",
-    "LookHorizontal": "向左/向右看；桌面模式下可用于平滑转向；开启舒适转向时 VR 值为 1 会快速转向",
+    # v1 per PLAN.md: only expose 3 most commonly used axes (inputSchema includes only these 3)
+    # Official doc.md has more /input axes, but we don't claim v1 support to avoid LLM misuse
+    "Vertical": "Move forward(1) / backward(-1)",
+    "Horizontal": "Move right(1) / left(-1)",
+    "LookHorizontal": "Look left/right; desktop mode enables smooth turning; VR comfort-turn snap at value 1",
 }
 
 _INPUT_BUTTONS: dict[str, str] = {
-    "MoveForward": "值为 1 时向前移动",
-    "MoveBackward": "值为 1 时向后移动",
-    "MoveLeft": "值为 1 时向左移动",
-    "MoveRight": "值为 1 时向右移动",
-    "LookLeft": "值为 1 时向左转动（桌面平滑；VR 舒适转向时快转）",
-    "LookRight": "值为 1 时向右转动（桌面平滑；VR 舒适转向时快转）",
-    "Jump": "跳跃（世界支持跳跃时有效）",
-    "Run": "奔跑（世界支持奔跑时有效）",
-    "ComfortLeft": "向左快转（仅 VR）",
-    "ComfortRight": "向右快转（仅 VR）",
-    "DropRight": "丢掉右手所持物品（仅 VR）",
-    "UseRight": "使用被右手高亮显示的物品（仅 VR）",
-    "GrabRight": "抓取被右手高亮显示的物品（仅 VR）",
-    "DropLeft": "丢掉左手所持物品（仅 VR）",
-    "UseLeft": "使用被左手高亮显示的物品（仅 VR）",
-    "GrabLeft": "抓取被左手高亮显示的物品（仅 VR）",
-    "PanicButton": "打开安全模式",
-    "QuickMenuToggleLeft": "切换快捷菜单：从 0->1 会触发切换",
-    "QuickMenuToggleRight": "切换快捷菜单：从 0->1 会触发切换",
-    "Voice": "语音开关/静音（行为取决于 VRChat 的“切换语音”设置）",
+    "MoveForward": "Move forward when value is 1",
+    "MoveBackward": "Move backward when value is 1",
+    "MoveLeft": "Move left when value is 1",
+    "MoveRight": "Move right when value is 1",
+    "LookLeft": "Turn left at value 1 (desktop smooth; VR comfort-turn snap)",
+    "LookRight": "Turn right at value 1 (desktop smooth; VR comfort-turn snap)",
+    "Jump": "Jump (effective when world supports jumping)",
+    "Run": "Run (effective when world supports running)",
+    "ComfortLeft": "Quick turn left (VR only)",
+    "ComfortRight": "Quick turn right (VR only)",
+    "DropRight": "Drop item held in right hand (VR only)",
+    "UseRight": "Use item highlighted by right hand (VR only)",
+    "GrabRight": "Grab item highlighted by right hand (VR only)",
+    "DropLeft": "Drop item held in left hand (VR only)",
+    "UseLeft": "Use item highlighted by left hand (VR only)",
+    "GrabLeft": "Grab item highlighted by left hand (VR only)",
+    "PanicButton": "Open safety mode",
+    "QuickMenuToggleLeft": "Toggle quick menu: 0->1 transition triggers toggle",
+    "QuickMenuToggleRight": "Toggle quick menu: 0->1 transition triggers toggle",
+    "Voice": "Voice toggle/mute (behavior depends on VRChat's 'Toggle Voice' setting)",
 }
 
 
@@ -68,7 +68,7 @@ def _resolve_supported_input(*, raw: str, allowed: dict[str, str], kind: str) ->
     if not name:
         raise DomainError(
             code="INVALID_ARGUMENT",
-            message=f"{kind} 不能为空。",
+            message=f"{kind} cannot be empty.",
         )
 
     if name in allowed:
@@ -83,8 +83,8 @@ def _resolve_supported_input(*, raw: str, allowed: dict[str, str], kind: str) ->
     raise DomainError(
         code="INVALID_ARGUMENT",
         message=(
-            f"未知/不支持的 VRChat /input {kind}: {raw!r}。"
-            "请使用 vrc_input_list_endpoints 查看支持清单，或按 VRChat 官方输入名传参。"
+            f"Unknown/unsupported VRChat /input {kind}: {raw!r}. "
+            "Use vrc_input_list_endpoints to view supported list, or pass VRChat official input name."
         ),
         details={
             "kind": kind,
@@ -214,10 +214,10 @@ class VRChatDomainAdapter:
         if schema_path is None:
             err = {
                 "code": "CAPABILITY_UNAVAILABLE",
-                "message": "未找到该 Avatar 的 LocalLow OSC config 文件（可能是 Build & Test 或未生成配置）。",
+                "message": "Avatar LocalLow OSC config file not found (may be Build & Test or config not generated).",
                 "details": {
                     "avatar_id": avatar_id,
-                    "hint": "如果该 Avatar 仅通过 Build & Test 加载，VRChat 不会将 OSC config 保存到磁盘。",
+                    "hint": "If this Avatar was only loaded via Build & Test, VRChat does not save OSC config to disk.",
                 },
             }
             self._schema_state = self._schema_snapshot()._with(
@@ -236,7 +236,7 @@ class VRChatDomainAdapter:
         except Exception as e:  # noqa: BLE001
             err = {
                 "code": "CAPABILITY_UNAVAILABLE",
-                "message": "读取/解析 Avatar OSC config 失败，已保留旧 schema。",
+                "message": "Failed to read/parse Avatar OSC config, keeping old schema.",
                 "details": {
                     "avatar_id": avatar_id,
                     "schema_path": str(schema_path),
@@ -307,7 +307,7 @@ class VRChatDomainAdapter:
         }
 
     def meta_get_capabilities(self, *, refresh: bool = False) -> dict[str, Any]:
-        # refresh 预留给未来：从 /avatar/change 或 receiver 刷新 schema/能力缓存。
+        # refresh reserved for future: refresh schema/capability cache from /avatar/change or receiver
         _ = refresh
 
         s = self._schema_snapshot()
@@ -342,8 +342,8 @@ class VRChatDomainAdapter:
                 "schema_last_error": s.schema_last_error,
             },
             "notes": {
-                "lookhorizontal_vr": "VR 舒适转向开启时 LookHorizontal=1 可能触发 snap-turn（见 VRChat 文档）。",
-                "input_write_only": "VRChat /input 是 write-only；不归零会持续生效。",
+                "lookhorizontal_vr": "LookHorizontal=1 may trigger snap-turn when VR comfort-turn is enabled (see VRChat docs).",
+                "input_write_only": "VRChat /input is write-only; not resetting causes persistent effect.",
             },
         }
 
@@ -383,7 +383,7 @@ class VRChatDomainAdapter:
         trace_id: str,
     ) -> dict[str, Any]:
         if not isinstance(name, str) or not name.strip():
-            raise DomainError(code="INVALID_ARGUMENT", message="name 必须是非空字符串。")
+            raise DomainError(code="INVALID_ARGUMENT", message="name must be non-empty string.")
 
         # Reuse existing safety policy behavior, but with v1.0 error codes.
         policy = self._settings.safety.parameter_policy
@@ -396,19 +396,19 @@ class VRChatDomainAdapter:
             if schema is None:
                 raise DomainError(
                     code="CAPABILITY_UNAVAILABLE",
-                    message="未加载 Avatar schema（LocalLow OSC config）。",
-                    details={"hint": "请提供 --avatar-config 或配置 vrchat.avatar_config / vrchat.osc_root。"},
+                    message="Avatar schema (LocalLow OSC config) not loaded.",
+                    details={"hint": "Provide --avatar-config or configure vrchat.avatar_config / vrchat.osc_root."},
                 )
             if schema_param is None:
                 raise DomainError(
                     code="INVALID_ARGUMENT",
-                    message="参数名不存在于当前 Avatar schema。建议先调用 vrc_avatar_list_parameters。",
+                    message="Parameter name does not exist in current Avatar schema. Recommend calling vrc_avatar_list_parameters first.",
                     details={"name": name},
                 )
             if not schema_param.writable:
                 raise DomainError(
                     code="CAPABILITY_UNAVAILABLE",
-                    message="该参数在 schema 中没有 input address，可能不可写。",
+                    message="Parameter has no input address in schema, may not be writable.",
                     details={"name": schema_param.name},
                 )
 
@@ -436,14 +436,14 @@ class VRChatDomainAdapter:
         if policy == "allowlist" and name not in allowed:
             raise DomainError(
                 code="CAPABILITY_UNAVAILABLE",
-                message="参数不在 allowlist 中，已拒绝发送。",
+                message="Parameter not in allowlist, send rejected.",
                 details={"name": name, "policy": policy},
             )
 
         if not isinstance(value, (bool, int, float)):
             raise DomainError(
                 code="INVALID_ARGUMENT",
-                message="value 必须是 bool/int/float。",
+                message="value must be bool/int/float.",
                 details={"name": name, "value_type": type(value).__name__},
             )
 
@@ -469,7 +469,7 @@ class VRChatDomainAdapter:
             if not isinstance(rv, (bool, int, float)):
                 raise DomainError(
                     code="INVALID_ARGUMENT",
-                    message="reset_value 必须是 bool/int/float。",
+                    message="reset_value must be bool/int/float.",
                     details={"name": name, "reset_value_type": type(rv).__name__},
                 )
             await asyncio.shield(self._transport.send(address=address, value=rv, trace_id=trace_id))
@@ -483,17 +483,17 @@ class VRChatDomainAdapter:
 
     async def avatar_set_parameters(self, *, parameters: list[dict[str, Any]], trace_id: str) -> dict[str, Any]:
         if not parameters:
-            raise DomainError(code="INVALID_ARGUMENT", message="parameters 不能为空。")
+            raise DomainError(code="INVALID_ARGUMENT", message="parameters cannot be empty.")
 
         results: list[dict[str, Any]] = []
         for p in parameters:
             if not isinstance(p, dict):
-                raise DomainError(code="INVALID_ARGUMENT", message="parameters[*] 必须是对象。")
+                raise DomainError(code="INVALID_ARGUMENT", message="parameters[*] must be object.")
             name = p.get("name")
             if not isinstance(name, str) or not name:
-                raise DomainError(code="INVALID_ARGUMENT", message="parameters[*].name 必须是非空字符串。")
+                raise DomainError(code="INVALID_ARGUMENT", message="parameters[*].name must be non-empty string.")
             if "value" not in p:
-                raise DomainError(code="INVALID_ARGUMENT", message="parameters[*].value 是必填。", details={"name": name})
+                raise DomainError(code="INVALID_ARGUMENT", message="parameters[*].value is required.", details={"name": name})
             value = p.get("value")
             r = await self.avatar_set_parameter(name=name, value=value, duration_ms=0, reset_value=None, trace_id=trace_id)
             results.append({"name": name, "osc_address": r.get("osc_address"), "sent_value": r.get("sent_value")})
@@ -507,22 +507,22 @@ class VRChatDomainAdapter:
         if expected == "Bool":
             if isinstance(value, bool):
                 return value, False
-            raise DomainError(code="INVALID_ARGUMENT", message="参数类型为 Bool，但 value 不是 bool。")
+            raise DomainError(code="INVALID_ARGUMENT", message="Parameter type is Bool, but value is not bool.")
 
         if expected == "Int":
             # bool is a subclass of int in Python, so exclude it explicitly.
             if isinstance(value, bool) or not isinstance(value, int):
-                raise DomainError(code="INVALID_ARGUMENT", message="参数类型为 Int，但 value 不是 int。")
+                raise DomainError(code="INVALID_ARGUMENT", message="Parameter type is Int, but value is not int.")
             return value, False
 
         # Float
         if isinstance(value, bool):
-            raise DomainError(code="INVALID_ARGUMENT", message="参数类型为 Float，但 value 不是 number。")
+            raise DomainError(code="INVALID_ARGUMENT", message="Parameter type is Float, but value is not number.")
         if isinstance(value, (int, float)):
             coerced = float(value)
             return coerced, coerced != value
 
-        raise DomainError(code="INVALID_ARGUMENT", message="value 必须是 bool/int/float。")
+        raise DomainError(code="INVALID_ARGUMENT", message="value must be bool/int/float.")
 
     # -----------------
     # Input domain (/input)
@@ -533,10 +533,10 @@ class VRChatDomainAdapter:
 
     async def input_tap_buttons(self, *, buttons: list[str], press_ms: int = 80, trace_id: str) -> dict[str, Any]:
         if not buttons:
-            raise DomainError(code="INVALID_ARGUMENT", message="buttons 不能为空。")
+            raise DomainError(code="INVALID_ARGUMENT", message="buttons cannot be empty.")
 
         if len(buttons) > 10:
-            raise DomainError(code="INVALID_ARGUMENT", message="buttons 数量过多（最大 10）。", details={"max": 10, "given": len(buttons)})
+            raise DomainError(code="INVALID_ARGUMENT", message="too many buttons (max 10).", details={"max": 10, "given": len(buttons)})
 
         press_ms_i = int(press_ms)
         if press_ms_i < 20:
@@ -560,10 +560,10 @@ class VRChatDomainAdapter:
 
     async def input_hold_buttons(self, *, buttons: list[str], trace_id: str) -> dict[str, Any]:
         if not buttons:
-            raise DomainError(code="INVALID_ARGUMENT", message="buttons 不能为空。")
+            raise DomainError(code="INVALID_ARGUMENT", message="buttons cannot be empty.")
 
         if len(buttons) > 10:
-            raise DomainError(code="INVALID_ARGUMENT", message="buttons 数量过多（最大 10）。", details={"max": 10, "given": len(buttons)})
+            raise DomainError(code="INVALID_ARGUMENT", message="too many buttons (max 10).", details={"max": 10, "given": len(buttons)})
 
         held: list[str] = []
         for raw in buttons:
@@ -576,10 +576,10 @@ class VRChatDomainAdapter:
 
     async def input_release_buttons(self, *, buttons: list[str], trace_id: str) -> dict[str, Any]:
         if not buttons:
-            raise DomainError(code="INVALID_ARGUMENT", message="buttons 不能为空。")
+            raise DomainError(code="INVALID_ARGUMENT", message="buttons cannot be empty.")
 
         if len(buttons) > 10:
-            raise DomainError(code="INVALID_ARGUMENT", message="buttons 数量过多（最大 10）。", details={"max": 10, "given": len(buttons)})
+            raise DomainError(code="INVALID_ARGUMENT", message="too many buttons (max 10).", details={"max": 10, "given": len(buttons)})
 
         released: list[str] = []
         for raw in buttons:
@@ -600,44 +600,45 @@ class VRChatDomainAdapter:
         trace_id: str,
     ) -> dict[str, Any]:
         if not isinstance(axes, dict):
-            raise DomainError(code="INVALID_ARGUMENT", message="axes 必须是对象。")
+            raise DomainError(code="INVALID_ARGUMENT", message="axes must be an object.")
 
         allowed_axes = set(_SUPPORTED_INPUT_AXES.keys())
         unknown = [k for k in axes.keys() if k not in allowed_axes]
         if unknown:
             raise DomainError(
                 code="INVALID_ARGUMENT",
-                message="axes 包含不支持的字段。",
+                message="axes contains unsupported fields.",
                 details={"unknown": sorted(unknown), "supported": sorted(allowed_axes)},
             )
 
         if duration_ms is None:
             duration_ms = 0
         if not isinstance(duration_ms, int):
-            raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 必须是整数。")
+            raise DomainError(code="INVALID_ARGUMENT", message="duration_ms must be an integer.")
         if duration_ms < 0:
-            raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 不能为负数。", details={"duration_ms": duration_ms})
+            raise DomainError(code="INVALID_ARGUMENT", message="duration_ms cannot be negative.", details={"duration_ms": duration_ms})
 
         if ease_ms is None:
             ease_ms = 80
         if not isinstance(ease_ms, int):
-            raise DomainError(code="INVALID_ARGUMENT", message="ease_ms 必须是整数。")
+            raise DomainError(code="INVALID_ARGUMENT", message="ease_ms must be an integer.")
         if ease_ms < 0 or ease_ms > 500:
-            raise DomainError(code="INVALID_ARGUMENT", message="ease_ms 必须在 [0,500]。", details={"ease_ms": ease_ms})
+            raise DomainError(code="INVALID_ARGUMENT", message="ease_ms must be within [0, 500].", details={"ease_ms": ease_ms})
 
         # Normalize and clamp
         to_send: dict[str, float] = {}
         for k, v in axes.items():
             if not isinstance(v, (int, float)) or isinstance(v, bool):
-                raise DomainError(code="INVALID_ARGUMENT", message="axis 值必须是 number。", details={"axis": k, "value_type": type(v).__name__})
+                raise DomainError(code="INVALID_ARGUMENT", message="axis values must be numbers.", details={"axis": k, "value_type": type(v).__name__})
             vv, _clamped = _clamp_axis(float(v))
             to_send[k] = vv
 
         if not to_send:
-            raise DomainError(code="INVALID_ARGUMENT", message="axes 不能为空对象。")
+            raise DomainError(code="INVALID_ARGUMENT", message="axes cannot be an empty object.")
 
         # Safety valve (doc.md): axes should reset to 0 when not in use.
-        # 为避免“永动机式前进”，即便调用方传 auto_zero=false，我们仍会做一个有界的强制归零。
+        # To avoid a "perpetual-motion" forward movement, even if the caller passes auto_zero=false,
+        # we still apply a bounded forced reset-to-zero.
         requested_auto_zero = bool(auto_zero)
         enforced_auto_zero = True
 
@@ -706,13 +707,13 @@ class VRChatDomainAdapter:
         trace_id: str,
     ) -> dict[str, Any]:
         if not isinstance(text, str) or not text.strip():
-            raise DomainError(code="INVALID_ARGUMENT", message="text 必须是非空字符串。")
+            raise DomainError(code="INVALID_ARGUMENT", message="text must be a non-empty string.")
 
         decision = self._chat_limiter.check()
         if not decision.allowed:
             raise DomainError(
                 code="RATE_LIMITED",
-                message="Chatbox 发送过于频繁，已限流。",
+                message="Chatbox messages are being sent too frequently; rate limited.",
                 details={"retry_after_ms": decision.retry_after_ms},
             )
 
@@ -723,9 +724,9 @@ class VRChatDomainAdapter:
 
         address = "/chatbox/input"
         # doc.md: /chatbox/input s b n
-        # - b=True: 立即发送（bypass keyboard）
-        # - b=False: 打开键盘并填充文本
-        # - n 可选；仅在立即发送时用于控制通知音效
+        # - b=True: send immediately (bypass keyboard)
+        # - b=False: open the keyboard and prefill the text
+        # - n optional; only used to control notification sound when sending immediately
         if bool(send_immediately):
             value = [trimmed, True, bool(notify)]
         else:
@@ -771,7 +772,7 @@ class VRChatDomainAdapter:
             pos = (float(position_m["x"]), float(position_m["y"]), float(position_m["z"]))
             rot = (float(rotation_euler_deg["x"]), float(rotation_euler_deg["y"]), float(rotation_euler_deg["z"]))
         except Exception as e:  # noqa: BLE001
-            raise DomainError(code="INVALID_ARGUMENT", message="position_m/rotation_euler_deg 必须包含 x,y,z 数字字段。") from e
+            raise DomainError(code="INVALID_ARGUMENT", message="position_m/rotation_euler_deg must contain numeric x, y, z fields.") from e
 
         self._tracking_stream.set_tracker_pose(tracker=tracker, position_m=pos, rotation_euler_deg=rot)
         return {
@@ -790,7 +791,7 @@ class VRChatDomainAdapter:
         trace_id: str,
     ) -> dict[str, Any]:
         if mode not in {"single_align", "stream_align"}:
-            raise DomainError(code="INVALID_ARGUMENT", message="mode 必须是 single_align 或 stream_align。")
+            raise DomainError(code="INVALID_ARGUMENT", message="mode must be 'single_align' or 'stream_align'.")
 
         pos_t: tuple[float, float, float] | None = None
         rot_t: tuple[float, float, float] | None = None
@@ -799,13 +800,13 @@ class VRChatDomainAdapter:
             try:
                 pos_t = (float(position_m["x"]), float(position_m["y"]), float(position_m["z"]))
             except Exception as e:  # noqa: BLE001
-                raise DomainError(code="INVALID_ARGUMENT", message="position_m 必须包含 x,y,z 数字字段。") from e
+                raise DomainError(code="INVALID_ARGUMENT", message="position_m must contain numeric x, y, z fields.") from e
 
         if rotation_euler_deg is not None:
             try:
                 rot_t = (float(rotation_euler_deg["x"]), float(rotation_euler_deg["y"]), float(rotation_euler_deg["z"]))
             except Exception as e:  # noqa: BLE001
-                raise DomainError(code="INVALID_ARGUMENT", message="rotation_euler_deg 必须包含 x,y,z 数字字段。") from e
+                raise DomainError(code="INVALID_ARGUMENT", message="rotation_euler_deg must contain numeric x, y, z fields.") from e
 
         await self._tracking_stream.set_head_reference(
             position_m=pos_t,
@@ -825,11 +826,11 @@ class VRChatDomainAdapter:
         trace_id: str,
     ) -> dict[str, Any]:
         if fps not in {20, 30, 45, 60}:
-            raise DomainError(code="INVALID_ARGUMENT", message="fps 必须是 20/30/45/60。", details={"fps": fps})
+            raise DomainError(code="INVALID_ARGUMENT", message="fps must be one of 20/30/45/60.", details={"fps": fps})
         if not isinstance(enabled_trackers, list) or not enabled_trackers:
-            raise DomainError(code="INVALID_ARGUMENT", message="enabled_trackers 不能为空。")
+            raise DomainError(code="INVALID_ARGUMENT", message="enabled_trackers cannot be empty.")
         if len(enabled_trackers) > 8:
-            raise DomainError(code="INVALID_ARGUMENT", message="enabled_trackers 最多 8 个。", details={"max": 8, "given": len(enabled_trackers)})
+            raise DomainError(code="INVALID_ARGUMENT", message="enabled_trackers must have at most 8 items.", details={"max": 8, "given": len(enabled_trackers)})
 
         # Validate tracker names early
         for t in enabled_trackers:
@@ -848,7 +849,7 @@ class VRChatDomainAdapter:
 
     async def eye_stream_start(self, *, fps: int, gaze_mode: str, neutral_on_stop: bool, trace_id: str) -> dict[str, Any]:
         if fps not in {20, 30, 45, 60}:
-            raise DomainError(code="INVALID_ARGUMENT", message="fps 必须是 20/30/45/60。", details={"fps": fps})
+            raise DomainError(code="INVALID_ARGUMENT", message="fps must be one of 20/30/45/60.", details={"fps": fps})
         gaze_mode = validate_gaze_mode(gaze_mode)
         stream_id = await self._eye_stream.start(fps=fps, gaze_mode=gaze_mode, neutral_on_stop=neutral_on_stop)
         return {"running": True, "stream_id": stream_id, "fps": fps, "mode": gaze_mode}
@@ -867,7 +868,7 @@ class VRChatDomainAdapter:
     async def eye_set_gaze(self, *, gaze_mode: str, data: dict[str, Any], trace_id: str) -> dict[str, Any]:
         gaze_mode = validate_gaze_mode(gaze_mode)
         if not isinstance(data, dict):
-            raise DomainError(code="INVALID_ARGUMENT", message="data 必须是对象。")
+            raise DomainError(code="INVALID_ARGUMENT", message="data must be an object.")
 
         # Strict per-mode validation (v1)
         args: list[float]
@@ -875,7 +876,7 @@ class VRChatDomainAdapter:
             if gaze_mode == "CenterPitchYaw":
                 args = [float(data["pitch"]), float(data["yaw"])]
             elif gaze_mode == "CenterPitchYawDist":
-                # 官方文档字段是 distance（米）。为兼容，我们同时接受 distance 或 distance_m。
+                # Official docs use `distance` (meters). For compatibility, accept `distance` or `distance_m`.
                 dist = data["distance_m"] if "distance_m" in data else data["distance"]
                 args = [float(data["pitch"]), float(data["yaw"]), float(dist)]
             elif gaze_mode in {"CenterVec", "CenterVecFull"}:
@@ -899,11 +900,11 @@ class VRChatDomainAdapter:
         except KeyError as e:
             raise DomainError(
                 code="INVALID_ARGUMENT",
-                message="data 缺少 gaze_mode 对应的必需字段。",
+                message="data is missing required fields for the given gaze_mode.",
                 details={"gaze_mode": gaze_mode, "missing": str(e)},
             ) from e
         except Exception as e:  # noqa: BLE001
-            raise DomainError(code="INVALID_ARGUMENT", message="data 字段必须是 number。", details={"gaze_mode": gaze_mode}) from e
+            raise DomainError(code="INVALID_ARGUMENT", message="data fields must be numbers.", details={"gaze_mode": gaze_mode}) from e
 
         # Enforce gaze_mode lock when stream is running
         self._eye_stream.set_gaze(gaze_mode=gaze_mode, args=args)

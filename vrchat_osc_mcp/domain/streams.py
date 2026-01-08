@@ -20,7 +20,7 @@ class StreamStatus:
 
 
 _TRACKER_TO_INDEX: dict[str, int] = {
-    # VRChat 官方：最多 8 个 tracker：hip, chest, 2x feet, 2x knees, 2x elbows
+    # VRChat official: max 8 trackers: hip, chest, 2x feet, 2x knees, 2x elbows
     # /tracking/trackers/1..8/{position,rotation}
     "hip": 1,
     "chest": 2,
@@ -39,7 +39,7 @@ def tracker_to_osc_index(tracker: str) -> int:
     except KeyError as e:
         raise DomainError(
             code="INVALID_ARGUMENT",
-            message="未知/不支持的 tracker 名称。",
+            message="Unknown/unsupported tracker name.",
             details={"given": tracker, "supported": sorted(_TRACKER_TO_INDEX.keys())},
         ) from e
 
@@ -141,7 +141,7 @@ class TrackingStream:
             if fps != self._fps or enabled_trackers != self._enabled_trackers or neutral_on_stop != self._neutral_on_stop:
                 raise DomainError(
                     code="CONFLICT",
-                    message="Tracking stream 已在运行，且配置不同。请先 stop 再 start。",
+                    message="Tracking stream already running with different config. Please stop first then start.",
                     details={
                         "running": {"fps": self._fps, "enabled_trackers": self._enabled_trackers, "neutral_on_stop": self._neutral_on_stop},
                         "requested": {"fps": fps, "enabled_trackers": enabled_trackers, "neutral_on_stop": neutral_on_stop},
@@ -276,7 +276,7 @@ def validate_gaze_mode(mode: str) -> str:
     if mode not in _GAZE_MODES:
         raise DomainError(
             code="INVALID_ARGUMENT",
-            message="未知/不支持的 gaze_mode。",
+            message="Unknown/unsupported gaze_mode.",
             details={"given": mode, "supported": sorted(_GAZE_MODES)},
         )
     return mode
@@ -334,7 +334,7 @@ class EyeStream:
 
     def set_blink(self, *, amount: float) -> None:
         if not (0.0 <= amount <= 1.0):
-            raise DomainError(code="INVALID_ARGUMENT", message="blink amount 必须在 [0,1]。", details={"amount": amount})
+            raise DomainError(code="INVALID_ARGUMENT", message="Blink amount must be in [0,1].", details={"amount": amount})
         self._blink_amount = float(amount)
         self._blink_updated_at = time.monotonic()
 
@@ -344,7 +344,7 @@ class EyeStream:
         if self._state == "RUNNING" and gaze_mode != self._gaze_mode:
             raise DomainError(
                 code="CONFLICT",
-                message="Eye stream 运行中不允许切换 gaze_mode。请先 stop 再 start。",
+                message="Cannot switch gaze_mode while eye stream is running. Please stop first then start.",
                 details={"running_mode": self._gaze_mode, "requested_mode": gaze_mode},
             )
 
@@ -360,7 +360,7 @@ class EyeStream:
             if fps != self._fps or gaze_mode != self._gaze_mode or neutral_on_stop != self._neutral_on_stop:
                 raise DomainError(
                     code="CONFLICT",
-                    message="Eye stream 已在运行，且配置不同。请先 stop 再 start。",
+                    message="Eye stream already running with different config. Please stop first then start.",
                     details={
                         "running": {"fps": self._fps, "gaze_mode": self._gaze_mode, "neutral_on_stop": self._neutral_on_stop},
                         "requested": {"fps": fps, "gaze_mode": gaze_mode, "neutral_on_stop": neutral_on_stop},

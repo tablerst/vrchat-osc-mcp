@@ -203,20 +203,22 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_meta_get_status",
-        description="获取服务状态（是否检测到 OSC、目标地址、上次发送时间、tracking/eye 流状态）。",
+        description="Get service status (OSC detection, target address, last send time, tracking/eye stream status).",
         annotations={"readOnlyHint": True},
         output_schema=_STATUS_OUTPUT_SCHEMA,
     )
     def vrc_meta_get_status() -> dict:
-        """查询 vrchat-osc-mcp 当前状态。
+        """Query vrchat-osc-mcp current status.
 
-        用途：让调用方判断 VRChat/OSC 是否“看起来可用”，以及后台 tracking/eye stream 是否在运行。
+        Purpose: Allows callers to determine if VRChat/OSC appears available and whether background tracking/eye streams are running.
         """
         return _wrap_sync(lambda *, trace_id: adapter.meta_get_status())()
 
     @_tool(
         name="vrc_meta_get_capabilities",
-        description="获取能力清单（支持的 input 轴/按钮、tracking/eye/chatbox 可用性、avatar schema 置信度等）。",
+        description=(
+            "Get a capability manifest (supported /input axes/buttons, tracking/eye/chatbox availability, avatar schema confidence, etc.)."
+        ),
         annotations={"readOnlyHint": True},
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
@@ -224,13 +226,15 @@ def create_server(*, adapter) -> FastMCP:
         refresh: Annotated[
             bool,
             Field(
-                description="是否刷新能力/缓存（v1 预留字段；当前实现为 best-effort）。",
+                description=(
+                    "Whether to refresh capabilities/cache (v1 reserved field; current implementation is best-effort)."
+                ),
             ),
         ] = False,
     ) -> dict:
-        """获取当前服务的能力与提示信息。
+        """Get current service capabilities and hints.
 
-        建议在做动作前先读 capabilities，避免 LLM “瞎按键”。
+        Recommendation: read capabilities before taking actions to avoid the LLM "randomly pressing buttons".
         """
         return _wrap_sync(lambda refresh, *, trace_id: adapter.meta_get_capabilities(refresh=refresh))(refresh)
 
@@ -240,19 +244,21 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_input_list_endpoints",
-        description="列出本服务器 v1 对外支持的 /input 轴与按钮名称（建议先调用再传参）。",
+        description=(
+            "List the /input axis and button names supported by this server (v1). Call this first to discover valid names."
+        ),
         annotations={"readOnlyHint": True},
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     def vrc_input_list_endpoints() -> dict:
-        """列出支持的 input endpoints（axes/buttons）。"""
+        """List supported /input endpoints (axes/buttons)."""
         return _wrap_sync(lambda *, trace_id: adapter.input_list_endpoints())()
 
     @_tool(
         name="vrc_input_set_axes",
         description=(
-            "设置 /input 轴（例如移动/转向）。值会自动夹紧到 [-1,1]，并且无论 auto_zero 与否都会强制有界归零，"
-            "避免持续输入。"
+            "Set /input axes (e.g., move/turn). Values are clamped to [-1,1]. "
+            "Regardless of auto_zero, the server enforces a bounded return-to-zero to avoid stuck inputs."
         ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
@@ -261,8 +267,8 @@ def create_server(*, adapter) -> FastMCP:
             dict,
             Field(
                 description=(
-                    "要设置的轴值对象。key 为轴名（v1: Vertical/Horizontal/LookHorizontal），value 为 number。"
-                    "超出 [-1,1] 会被自动夹紧；未知轴名会报错。"
+                    "Axis values to set. Keys are axis names (v1: Vertical/Horizontal/LookHorizontal), values are numbers. "
+                    "Values outside [-1,1] are clamped; unknown axis names raise an error."
                 ),
                 examples=[{"Vertical": 1.0}],
             ),
@@ -271,8 +277,8 @@ def create_server(*, adapter) -> FastMCP:
             int,
             Field(
                 description=(
-                    "持续时间（毫秒）。<=0 时将使用 ease_ms 作为默认持续时间；最终会被限制到 safety.max_axis_duration_ms。"
-                    "注意：为安全起见工具会强制归零（enforced_auto_zero）。"
+                    "Duration (ms). If <= 0, ease_ms is used as the default duration; the final duration is limited to safety.max_axis_duration_ms. "
+                    "Note: for safety the tool enforces auto-zero (enforced_auto_zero)."
                 ),
                 ge=0,
             ),
@@ -281,26 +287,29 @@ def create_server(*, adapter) -> FastMCP:
             bool,
             Field(
                 description=(
-                    "是否请求自动归零（requested_auto_zero）。即便传 false，服务器仍会强制有界归零以避免“永动机式前进”。"
+                    "Whether to request auto-zero (requested_auto_zero). Even if false, the server still enforces a bounded return-to-zero to avoid "
+                    "perpetual motion-style movement."
                 )
             ),
         ] = True,
         ease_ms: Annotated[
             int,
             Field(
-                description="缓动/插值时长（毫秒）。当 duration_ms<=0 时作为默认持续时间；范围 [0,500]。",
+                description=(
+                    "Easing/interpolation duration (ms). Used as the default duration when duration_ms<=0; range [0,500]."
+                ),
                 ge=0,
                 le=500,
             ),
         ] = 80,
         ctx: Context | None = None,
     ) -> dict:
-        """设置一个或多个 /input 轴。
+        """Set one or more /input axes.
 
-        关键语义（安全阀）：
-        - 轴值会被夹紧到 [-1,1]
-        - 最终 duration 会被限制到 settings.safety.max_axis_duration_ms
-        - 无论 auto_zero 与否都会强制归零（以避免持续输入）
+        Key semantics (safety valves):
+        - Axis values are clamped to [-1,1]
+        - The final duration is limited to settings.safety.max_axis_duration_ms
+        - Auto-zero is enforced regardless of auto_zero (to avoid stuck inputs)
         """
         return await _wrap_async(adapter.input_set_axes)(
             axes=axes,
@@ -312,14 +321,16 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_input_tap_buttons",
-        description="点按按钮（自动 press + release）。用于 Jump/Use 等瞬时动作；避免长按副作用。",
+        description=(
+            "Tap buttons (automatic press + release). For transient actions like Jump/Use; avoids long-press side effects."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_input_tap_buttons(
         buttons: Annotated[
             list[str],
             Field(
-                description="要点按的按钮名数组（建议先 vrc_input_list_endpoints）。最多 10 个。",
+                description="Button names to tap (call vrc_input_list_endpoints first). Up to 10.",
                 min_length=1,
                 max_length=10,
             ),
@@ -327,64 +338,66 @@ def create_server(*, adapter) -> FastMCP:
         press_ms: Annotated[
             int,
             Field(
-                description="按住时长（毫秒）。将被钳制到 [20,1000] 以提高 VRChat 识别概率。",
+                description="Press duration (ms). Clamped to [20,1000] to improve VRChat recognition reliability.",
                 ge=0,
                 le=1000,
             ),
         ] = 80,
         ctx: Context | None = None,
     ) -> dict:
-        """点按一个或多个 /input 按钮。
+        """Tap one or more /input buttons.
 
-        语义：每个按钮都会发送 1，然后在 finally 中保证发送 0（即使中途异常）。
+        Semantics: for each button, send 1 and then guarantee sending 0 in a finally block (even if an exception occurs).
         """
         return await _wrap_async(adapter.input_tap_buttons)(buttons=buttons, press_ms=press_ms, ctx=ctx)
 
     @_tool(
         name="vrc_input_hold_buttons",
-        description="按住按钮（发送 value=1 并保持）。需要后续调用 vrc_input_release_buttons 或 vrc_input_stop 释放。",
+        description=(
+            "Hold buttons (send value=1 and keep held). Call vrc_input_release_buttons or vrc_input_stop later to release."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_input_hold_buttons(
         buttons: Annotated[
             list[str],
             Field(
-                description="要按住的按钮名数组（最多 10 个）。",
+                description="Button names to hold (up to 10).",
                 min_length=1,
                 max_length=10,
             ),
         ],
         ctx: Context | None = None,
     ) -> dict:
-        """按住（hold）按钮。"""
+        """Hold buttons."""
         return await _wrap_async(adapter.input_hold_buttons)(buttons=buttons, ctx=ctx)
 
     @_tool(
         name="vrc_input_release_buttons",
-        description="释放按钮（发送 value=0）。",
+        description="Release buttons (send value=0).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_input_release_buttons(
         buttons: Annotated[
             list[str],
             Field(
-                description="要释放的按钮名数组（最多 10 个）。",
+                description="Button names to release (up to 10).",
                 min_length=1,
                 max_length=10,
             ),
         ],
         ctx: Context | None = None,
     ) -> dict:
-        """释放（release）按钮。"""
+        """Release buttons."""
         return await _wrap_async(adapter.input_release_buttons)(buttons=buttons, ctx=ctx)
 
     @_tool(
         name="vrc_input_stop",
-        description="Input 子系统急停：所有轴归零、释放所有按钮（幂等）。",
+        description="Emergency stop for input: zero all axes and release all buttons (idempotent).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_input_stop(ctx: Context | None = None) -> dict:
-        """停止所有 /input 影响（归零 + 释放）。"""
+        """Stop all /input effects (zero + release)."""
         return await _wrap_async(adapter.input_stop)(ctx=ctx)
 
     # -----------------
@@ -393,39 +406,51 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_avatar_list_parameters",
-        description="列出当前 Avatar 参数（基于本地 OSC config/schema，若未加载则可能为空）。",
+        description=(
+            "List current Avatar parameters (from local OSC config/schema; may be empty if not loaded)."
+        ),
         annotations={"readOnlyHint": True},
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     def vrc_avatar_list_parameters() -> dict:
-        """列出当前 avatar 的参数清单（若 schema 未加载则返回空）。"""
+        """List the current avatar's parameters (returns empty if schema is not loaded)."""
         return _wrap_sync(lambda *, trace_id: adapter.avatar_list_parameters())()
 
     @_tool(
         name="vrc_avatar_set_parameter",
         description=(
-            "设置单个 Avatar 参数。支持 duration_ms + reset_value 做脉冲；参数策略由 safety.parameter_policy 控制。"
+            "Set a single Avatar parameter. Supports duration_ms + reset_value pulses; parameter policy is controlled by safety.parameter_policy."
         ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_avatar_set_parameter(
         name: Annotated[
             str,
-            Field(description="参数名（推荐先 vrc_avatar_list_parameters；也可直接传 VRChat 参数名）。", min_length=1),
+            Field(
+                description=(
+                    "Parameter name (recommended: call vrc_avatar_list_parameters first; you may also pass a raw VRChat parameter name)."
+                ),
+                min_length=1,
+            ),
         ],
         value: Any,
         duration_ms: Annotated[
             int,
-            Field(description="可选：持续时间（毫秒）。>0 时在等待后自动写回 reset_value/默认值。", ge=0),
+            Field(
+                description=(
+                    "Optional: duration (ms). If >0, after waiting it automatically writes back reset_value/default."
+                ),
+                ge=0,
+            ),
         ] = 0,
         reset_value: Any = None,
         ctx: Context | None = None,
     ) -> dict:
-        """设置单个 Avatar 参数。
+        """Set a single Avatar parameter.
 
-        说明：
-        - value / reset_value 最佳实践是 bool/int/float（VRChat 参数类型）。
-        - strict 策略下会校验 schema 是否存在且参数可写。
+        Notes:
+        - Best practice for value / reset_value is bool/int/float (VRChat parameter types).
+        - Under the strict policy, the schema is validated for existence and parameter writability.
         """
         return await _wrap_async(adapter.avatar_set_parameter)(
             name=name,
@@ -437,17 +462,20 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_avatar_set_parameters",
-        description="批量设置多个 Avatar 参数（减少 tool call）。",
+        description="Set multiple Avatar parameters in one call (reduces tool calls).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_avatar_set_parameters(
         parameters: Annotated[
             list[dict],
-            Field(description="参数对象数组：[{name, value}, ...]。至少 1 个，最多建议 64 个。", min_length=1),
+            Field(
+                description="Array of parameter objects: [{name, value}, ...]. At least 1; recommended maximum is 64.",
+                min_length=1,
+            ),
         ],
         ctx: Context | None = None,
     ) -> dict:
-        """批量设置参数（内部逐个发送，返回每项结果）。"""
+        """Set parameters in bulk (sent one-by-one internally; returns per-item results)."""
         return await _wrap_async(adapter.avatar_set_parameters)(parameters=parameters, ctx=ctx)
 
     # -----------------
@@ -456,7 +484,9 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_tracking_set_tracker_pose",
-        description="设置某个 tracker 的目标位姿（position_m / rotation_euler_deg）。通常配合 tracking stream 使用。",
+        description=(
+            "Set a tracker's target pose (position_m / rotation_euler_deg). Typically used together with the tracking stream."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_tracking_set_tracker_pose(
@@ -464,43 +494,55 @@ def create_server(*, adapter) -> FastMCP:
             str,
             Field(
                 description=(
-                    "Tracker 名称（例如 hip/left_foot/right_foot 等）。"
-                    "建议使用 vrc_meta_get_capabilities 了解推荐 tracker。"
+                    "Tracker name (e.g., hip/left_foot/right_foot). "
+                    "Use vrc_meta_get_capabilities to see recommended trackers."
                 ),
                 min_length=1,
             ),
         ],
         position_m: Annotated[
             dict,
-            Field(description="位置（米）。对象：{x,y,z}。坐标系按 Unity 假设。"),
+            Field(description="Position in meters. Object: {x,y,z}. Coordinate system assumes Unity."),
         ],
         rotation_euler_deg: Annotated[
             dict,
-            Field(description="旋转欧拉角（度）。对象：{x,y,z}。"),
+            Field(description="Euler rotation in degrees. Object: {x,y,z}."),
         ],
         blend_ms: Annotated[
             int,
-            Field(description="预留：混合时长（毫秒）。v1 接受但不应用。范围 [0,1000]。", ge=0, le=1000),
+            Field(
+                description="Reserved: blend duration (ms). Accepted but not applied in v1. Range [0,1000].",
+                ge=0,
+                le=1000,
+            ),
         ] = 60,
         space: Annotated[
             str,
-            Field(description="坐标系名称。v1 仅支持 unity。", examples=["unity"]),
+            Field(description="Coordinate space name. v1 only supports unity.", examples=["unity"]),
         ] = "unity",
         ctx: Context | None = None,
     ) -> dict:
-        """设置 tracker 位姿（单次更新）。"""
+        """Set a tracker's pose (single update)."""
         # v1: space only supports "unity" (per PLAN)
         if space != "unity":
             trace_id = _trace_id(ctx)
             return _err(
                 trace_id=trace_id,
-                error_obj={"code": "INVALID_ARGUMENT", "message": "space 仅支持 unity。", "details": {"space": space}},
+                error_obj={
+                    "code": "INVALID_ARGUMENT",
+                    "message": "space only supports 'unity'.",
+                    "details": {"space": space},
+                },
             )
         if blend_ms < 0 or blend_ms > 1000:
             trace_id = _trace_id(ctx)
             return _err(
                 trace_id=trace_id,
-                error_obj={"code": "INVALID_ARGUMENT", "message": "blend_ms 必须在 [0,1000]。", "details": {"blend_ms": blend_ms}},
+                error_obj={
+                    "code": "INVALID_ARGUMENT",
+                    "message": "blend_ms must be in [0,1000].",
+                    "details": {"blend_ms": blend_ms},
+                },
             )
         # blend_ms currently accepted but not applied (reserved)
         return await _wrap_async(adapter.tracking_set_tracker_pose)(
@@ -512,25 +554,27 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_tracking_set_head_reference",
-        description="设置 head reference（可选 position/rotation）以及对齐模式（single_align/stream_align）。",
+        description=(
+            "Set head reference (optional position/rotation) and alignment mode (single_align/stream_align)."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_tracking_set_head_reference(
         position_m: Annotated[
             dict | None,
-            Field(description="可选：头部参考位置（米）。对象：{x,y,z}。"),
+            Field(description="Optional: head reference position in meters. Object: {x,y,z}."),
         ] = None,
         rotation_euler_deg: Annotated[
             dict | None,
-            Field(description="可选：头部参考旋转（度）。对象：{x,y,z}。"),
+            Field(description="Optional: head reference rotation in degrees. Object: {x,y,z}."),
         ] = None,
         mode: Annotated[
             str,
-            Field(description="对齐模式：single_align 或 stream_align。", examples=["stream_align"]),
+            Field(description="Alignment mode: single_align or stream_align.", examples=["stream_align"]),
         ] = "stream_align",
         ctx: Context | None = None,
     ) -> dict:
-        """设置 head reference（用于追踪对齐/校准）。"""
+        """Set head reference (for tracking alignment/calibration)."""
         return await _wrap_async(adapter.tracking_set_head_reference)(
             position_m=position_m,
             rotation_euler_deg=rotation_euler_deg,
@@ -540,27 +584,31 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_tracking_stream_start",
-        description="启动 tracking 后台流（按 fps 持续发送 tracker 数据）。",
+        description="Start the background tracking stream (continuously sends tracker data at fps).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_tracking_stream_start(
-        fps: Annotated[int, Field(description="流发送帧率，只允许 20/30/45/60。", examples=[60])] = 60,
+        fps: Annotated[int, Field(description="Stream FPS; allowed values: 20/30/45/60.", examples=[60])] = 60,
         enabled_trackers: Annotated[
             list[str] | None,
-            Field(description="启用的 tracker 列表（最多 8 个）。省略则使用默认值。"),
+            Field(description="Enabled tracker list (up to 8). If omitted, defaults are used."),
         ] = None,
         neutral_on_stop: Annotated[
             bool,
-            Field(description="停止时是否发送中立姿态（best-effort）。"),
+            Field(description="Whether to send a neutral pose on stop (best-effort)."),
         ] = True,
         ctx: Context | None = None,
     ) -> dict:
-        """启动 tracking stream（幂等）。"""
+        """Start the tracking stream (idempotent)."""
         if fps not in (20, 30, 45, 60):
             trace_id = _trace_id(ctx)
             return _err(
                 trace_id=trace_id,
-                error_obj={"code": "INVALID_ARGUMENT", "message": "fps 必须是 20/30/45/60。", "details": {"fps": fps}},
+                error_obj={
+                    "code": "INVALID_ARGUMENT",
+                    "message": "fps must be one of 20/30/45/60.",
+                    "details": {"fps": fps},
+                },
             )
         if enabled_trackers is None:
             enabled_trackers = ["hip", "left_foot", "right_foot"]
@@ -573,14 +621,17 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_tracking_stream_stop",
-        description="停止 tracking 后台流（幂等）。stream_id 当前为预留字段。",
+        description="Stop the background tracking stream (idempotent). stream_id is currently reserved.",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_tracking_stream_stop(
-        stream_id: Annotated[str | None, Field(description="预留：要停止的 stream_id。当前实现忽略该值。")] = None,
+        stream_id: Annotated[
+            str | None,
+            Field(description="Reserved: stream_id to stop. Current implementation ignores this value."),
+        ] = None,
         ctx: Context | None = None,
     ) -> dict:
-        """停止 tracking stream。"""
+        """Stop the tracking stream."""
         return await _wrap_async(adapter.tracking_stream_stop)(stream_id=stream_id, ctx=ctx)
 
     # -----------------
@@ -589,48 +640,52 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_eye_stream_start",
-        description="启动 eye tracking 后台流（按 fps 持续发送 gaze/眨眼等）。",
+        description="Start the background eye tracking stream (continuously sends gaze/blink, etc. at fps).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_eye_stream_start(
-        fps: Annotated[int, Field(description="流发送帧率，只允许 20/30/45/60。", examples=[60])] = 60,
+        fps: Annotated[int, Field(description="Stream FPS; allowed values: 20/30/45/60.", examples=[60])] = 60,
         gaze_mode: Annotated[
             str,
             Field(
                 description=(
-                    "注视数据格式（gaze_mode）。例如 CenterPitchYaw/CenterVec/LeftRightPitchYaw 等。"
-                    "同一时间只能使用一种 gaze_mode。"
+                    "Gaze data format (gaze_mode). Examples: CenterPitchYaw/CenterVec/LeftRightPitchYaw. "
+                    "Only one gaze_mode can be used at a time."
                 ),
                 examples=["CenterPitchYaw"],
             ),
         ] = "CenterPitchYaw",
-        neutral_on_stop: Annotated[bool, Field(description="停止时是否发送中立 gaze/眨眼（best-effort）。")] = True,
+        neutral_on_stop: Annotated[bool, Field(description="Whether to send neutral gaze/blink on stop (best-effort).")] = True,
         ctx: Context | None = None,
     ) -> dict:
-        """启动 eye stream（幂等）。"""
+        """Start the eye stream (idempotent)."""
         if fps not in (20, 30, 45, 60):
             trace_id = _trace_id(ctx)
             return _err(
                 trace_id=trace_id,
-                error_obj={"code": "INVALID_ARGUMENT", "message": "fps 必须是 20/30/45/60。", "details": {"fps": fps}},
+                error_obj={
+                    "code": "INVALID_ARGUMENT",
+                    "message": "fps must be one of 20/30/45/60.",
+                    "details": {"fps": fps},
+                },
             )
         return await _wrap_async(adapter.eye_stream_start)(fps=fps, gaze_mode=gaze_mode, neutral_on_stop=neutral_on_stop, ctx=ctx)
 
     @_tool(
         name="vrc_eye_set_blink",
-        description="设置眨眼/闭眼程度（EyesClosedAmount）。通常范围 0~1（不强制）。",
+        description="Set blink/eye-closed amount (EyesClosedAmount). Typical range is 0~1 (not enforced).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_eye_set_blink(
-        amount: Annotated[float, Field(description="闭眼程度，通常 0~1。会被发送为 float。", examples=[0.0, 1.0])],
+        amount: Annotated[float, Field(description="Eye-closed amount, typically 0~1. Sent as float.", examples=[0.0, 1.0])],
         ctx: Context | None = None,
     ) -> dict:
-        """设置眨眼（并立即发送一次）。"""
+        """Set blink and send once immediately."""
         return await _wrap_async(adapter.eye_set_blink)(amount=amount, ctx=ctx)
 
     @_tool(
         name="vrc_eye_set_gaze",
-        description="设置注视方向/向量（按 gaze_mode 决定 data 字段）。并立即发送一次。",
+        description="Set gaze direction/vector (data fields depend on gaze_mode) and send once immediately.",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_eye_set_gaze(
@@ -638,30 +693,33 @@ def create_server(*, adapter) -> FastMCP:
             str,
             Field(
                 description=(
-                    "注视数据格式。示例："
-                    "CenterPitchYaw -> data={pitch,yaw}; CenterPitchYawDist -> {pitch,yaw,distance或distance_m}; "
+                    "Gaze data format. Examples: "
+                    "CenterPitchYaw -> data={pitch,yaw}; CenterPitchYawDist -> {pitch,yaw,distance or distance_m}; "
                     "CenterVec -> {x,y,z}; LeftRightPitchYaw -> {left_pitch,left_yaw,right_pitch,right_yaw}; "
-                    "LeftRightVec -> {left_x,left_y,left_z,right_x,right_y,right_z}。"
+                    "LeftRightVec -> {left_x,left_y,left_z,right_x,right_y,right_z}."
                 ),
                 examples=["CenterPitchYaw"],
             ),
         ],
-        data: Annotated[dict, Field(description="gaze_mode 对应的数据对象（字段必须是 number）。")],
+        data: Annotated[dict, Field(description="Data object for the selected gaze_mode (fields must be numbers).")],
         ctx: Context | None = None,
     ) -> dict:
-        """设置 gaze（并立即发送一次）。"""
+        """Set gaze and send once immediately."""
         return await _wrap_async(adapter.eye_set_gaze)(gaze_mode=gaze_mode, data=data, ctx=ctx)
 
     @_tool(
         name="vrc_eye_stream_stop",
-        description="停止 eye tracking 后台流（幂等）。stream_id 当前为预留字段。",
+        description="Stop the background eye tracking stream (idempotent). stream_id is currently reserved.",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_eye_stream_stop(
-        stream_id: Annotated[str | None, Field(description="预留：要停止的 stream_id。当前实现忽略该值。")] = None,
+        stream_id: Annotated[
+            str | None,
+            Field(description="Reserved: stream_id to stop. Current implementation ignores this value."),
+        ] = None,
         ctx: Context | None = None,
     ) -> dict:
-        """停止 eye stream。"""
+        """Stop the eye stream."""
         return await _wrap_async(adapter.eye_stream_stop)(stream_id=stream_id, ctx=ctx)
 
     # -----------------
@@ -670,7 +728,7 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_chatbox_send",
-        description="发送 Chatbox 文本（自动裁剪到 144 字符 / 9 行，并带频率限制）。",
+        description="Send Chatbox text (auto-trim to 144 chars / 9 lines, with rate limiting).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_chatbox_send(
@@ -678,7 +736,7 @@ def create_server(*, adapter) -> FastMCP:
             str,
             Field(
                 description=(
-                    "要发送的文本（非空）。将自动裁剪到 144 字符 / 9 行以符合 VRChat 限制。"
+                    "Text to send (non-empty). Automatically trimmed to 144 chars / 9 lines to match VRChat limits."
                 ),
                 min_length=1,
             ),
@@ -687,22 +745,22 @@ def create_server(*, adapter) -> FastMCP:
             bool,
             Field(
                 description=(
-                    "是否立即发送：true 表示 bypass 键盘并直接发送；false 表示打开键盘并填充文本。"
-                    "当为 false 时，notify 参数会被忽略（VRChat 端不接收 n）。"
+                    "Send immediately: true bypasses the keyboard and sends directly; false opens the keyboard and fills the text. "
+                    "When false, notify is ignored (VRChat does not accept the 'n' parameter)."
                 )
             ),
         ] = True,
-        notify: Annotated[bool, Field(description="是否播放通知音效（仅在 send_immediately=true 时有效）。")] = True,
-        set_typing: Annotated[bool, Field(description="是否在发送前设置 typing=true（发送后会自动清回，best-effort）。")] = False,
+        notify: Annotated[bool, Field(description="Play notification sound (only effective when send_immediately=true).")] = True,
+        set_typing: Annotated[bool, Field(description="Set typing=true before sending (cleared after sending, best-effort).")] = False,
         ctx: Context | None = None,
     ) -> dict:
-        """发送 chatbox 文本。
+        """Send Chatbox text.
 
-        语义：
-        - 自动裁剪（144 chars / 9 lines）
-        - 限流（chat_per_minute）
-        - send_immediately=false 时仅发送 (text, False)
-        - send_immediately=true 时发送 (text, True, notify)
+        Semantics:
+        - Auto-trim (144 chars / 9 lines)
+        - Rate limiting (chat_per_minute)
+        - If send_immediately=false, send only (text, False)
+        - If send_immediately=true, send (text, True, notify)
         """
         return await _wrap_async(adapter.chatbox_send)(
             text=text,
@@ -714,14 +772,14 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_chatbox_set_typing",
-        description="设置 Chatbox typing 状态（显示“正在输入”）。",
+        description="Set Chatbox typing state (shows \"typing\").",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_chatbox_set_typing(
-        is_typing: Annotated[bool, Field(description="是否处于输入中（true/false）。")],
+        is_typing: Annotated[bool, Field(description="Whether the user is typing (true/false).")],
         ctx: Context | None = None,
     ) -> dict:
-        """设置 /chatbox/typing。"""
+        """Set /chatbox/typing."""
         return await _wrap_async(adapter.chatbox_set_typing)(is_typing=is_typing, ctx=ctx)
 
     # -----------------
@@ -730,11 +788,13 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_stop_all",
-        description="全局急停：停止 input/tracking/eye 流，并清除 chatbox typing（best-effort）。",
+        description=(
+            "Global emergency stop: stop input/tracking/eye streams and clear chatbox typing (best-effort)."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_stop_all(ctx: Context | None = None) -> dict:
-        """全局 stop（幂等）。"""
+        """Global stop (idempotent)."""
         return await _wrap_async(adapter.stop_all)(ctx=ctx)
 
     # -----------------
@@ -743,23 +803,25 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_macro_move_for",
-        description="宏：按给定轴值移动/转向一段时间（内部使用 vrc_input_set_axes 的安全归零语义）。",
+        description=(
+            "Macro: move/turn for a duration using given axis values (internally uses vrc_input_set_axes safety auto-zero semantics)."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_macro_move_for(
-        duration_ms: Annotated[int, Field(description="持续时间（毫秒）。范围 [50,30000]。", ge=0)],
-        forward: Annotated[float, Field(description="前进轴（Vertical）。范围 [-1,1]。", examples=[-1.0, 0.0, 1.0])] = 0,
-        strafe: Annotated[float, Field(description="横移轴（Horizontal）。范围 [-1,1]。", examples=[-1.0, 0.0, 1.0])] = 0,
-        turn: Annotated[float, Field(description="转向轴（LookHorizontal）。范围 [-1,1]。", examples=[-1.0, 0.0, 1.0])] = 0,
+        duration_ms: Annotated[int, Field(description="Duration (ms). Range [50,30000].", ge=0)],
+        forward: Annotated[float, Field(description="Forward axis (Vertical). Range [-1,1].", examples=[-1.0, 0.0, 1.0])] = 0,
+        strafe: Annotated[float, Field(description="Strafe axis (Horizontal). Range [-1,1].", examples=[-1.0, 0.0, 1.0])] = 0,
+        turn: Annotated[float, Field(description="Turn axis (LookHorizontal). Range [-1,1].", examples=[-1.0, 0.0, 1.0])] = 0,
         ctx: Context | None = None,
     ) -> dict:
-        """宏：移动/转向一段时间（自动归零）。"""
+        """Macro: move/turn for a duration (auto-zero enforced)."""
         async def _impl(*, trace_id: str):
             if duration_ms < 50 or duration_ms > 30000:
-                raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 必须在 [50,30000]。", details={"duration_ms": duration_ms})
+                raise DomainError(code="INVALID_ARGUMENT", message="duration_ms must be in [50,30000].", details={"duration_ms": duration_ms})
             for name, v in ("forward", forward), ("strafe", strafe), ("turn", turn):
                 if v < -1 or v > 1:
-                    raise DomainError(code="INVALID_ARGUMENT", message=f"{name} 必须在 [-1,1]。", details={name: v})
+                    raise DomainError(code="INVALID_ARGUMENT", message=f"{name} must be in [-1,1].", details={name: v})
 
             # Only include axes the caller actually wants to drive.
             # This avoids unintentionally clobbering other concurrent inputs
@@ -787,14 +849,16 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_macro_turn_degrees",
-        description="宏：按近似映射将 degrees 转为 LookHorizontal 的短脉冲转向（保守估计）。",
+        description=(
+            "Macro: convert degrees into a short LookHorizontal pulse using a conservative heuristic mapping."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_macro_turn_degrees(
-        degrees: Annotated[float, Field(description="期望转向角度（度）。正值向右，负值向左。", examples=[-90.0, 90.0])],
+        degrees: Annotated[float, Field(description="Desired turn angle in degrees. Positive turns right, negative turns left.", examples=[-90.0, 90.0])],
         ctx: Context | None = None,
     ) -> dict:
-        """宏：近似转向指定角度。"""
+        """Macro: approximately turn by a specified angle."""
         # Simple heuristic: map degrees -> LookHorizontal axis pulse duration.
         # This is intentionally conservative; platform differences are noted in capabilities.
         async def _impl(*, trace_id: str):
@@ -816,24 +880,26 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_macro_look_at",
-        description="宏：让视线朝向指定 yaw/pitch（优先使用 eye；失败则回退到 input）。",
+        description=(
+            "Macro: look towards a target yaw/pitch (prefer eye; fall back to input on failure)."
+        ),
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_macro_look_at(
-        yaw_deg: Annotated[float, Field(description="偏航角 yaw（度）。范围建议 [-90,90]。", examples=[-30.0, 30.0])],
-        pitch_deg: Annotated[float, Field(description="俯仰角 pitch（度）。范围建议 [-45,45]。", examples=[-10.0, 10.0])],
-        duration_ms: Annotated[int, Field(description="保持时长（毫秒）。范围 [50,10000]。", ge=0)] = 800,
-        prefer_eye: Annotated[bool, Field(description="是否优先使用 eye gaze（若不可用将自动回退到 input）。")] = True,
+        yaw_deg: Annotated[float, Field(description="Yaw angle in degrees. Recommended range [-90,90].", examples=[-30.0, 30.0])],
+        pitch_deg: Annotated[float, Field(description="Pitch angle in degrees. Recommended range [-45,45].", examples=[-10.0, 10.0])],
+        duration_ms: Annotated[int, Field(description="Hold duration (ms). Range [50,10000].", ge=0)] = 800,
+        prefer_eye: Annotated[bool, Field(description="Prefer eye gaze if available (falls back to input automatically).")] = True,
         ctx: Context | None = None,
     ) -> dict:
-        """宏：注视目标方向一段时间。"""
+        """Macro: look towards a target direction for a duration."""
         async def _impl(*, trace_id: str):
             if yaw_deg < -90 or yaw_deg > 90:
-                raise DomainError(code="INVALID_ARGUMENT", message="yaw_deg 必须在 [-90,90]。", details={"yaw_deg": yaw_deg})
+                raise DomainError(code="INVALID_ARGUMENT", message="yaw_deg must be in [-90,90].", details={"yaw_deg": yaw_deg})
             if pitch_deg < -45 or pitch_deg > 45:
-                raise DomainError(code="INVALID_ARGUMENT", message="pitch_deg 必须在 [-45,45]。", details={"pitch_deg": pitch_deg})
+                raise DomainError(code="INVALID_ARGUMENT", message="pitch_deg must be in [-45,45].", details={"pitch_deg": pitch_deg})
             if duration_ms < 50 or duration_ms > 10000:
-                raise DomainError(code="INVALID_ARGUMENT", message="duration_ms 必须在 [50,10000]。", details={"duration_ms": duration_ms})
+                raise DomainError(code="INVALID_ARGUMENT", message="duration_ms must be in [50,10000].", details={"duration_ms": duration_ms})
             if prefer_eye:
                 # Ensure eye stream is running (idempotent if already started).
                 try:
@@ -871,29 +937,32 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_macro_emote",
-        description="宏：触发 emote（v1 需要配置 emote 映射表；当前为占位符）。",
+        description="Macro: trigger an emote (v1 requires an emote mapping table; currently a placeholder).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
-    def vrc_macro_emote(name: Annotated[str, Field(description="Emote 名称（需要在配置中映射）。", min_length=1)], ctx: Context | None = None) -> dict:
-        """占位符：emote 需要 profile/emote 映射表。"""
-        # Placeholder: v1 需要 profile/emote 映射表。
+    def vrc_macro_emote(
+        name: Annotated[str, Field(description="Emote name (must be mapped in config).", min_length=1)],
+        ctx: Context | None = None,
+    ) -> dict:
+        """Placeholder: emote requires a profile/emote mapping table."""
+        # Placeholder: v1 requires a profile/emote mapping table.
         trace_id = _trace_id(ctx)
         return _err(
             trace_id=trace_id,
             error_obj={
                 "code": "CAPABILITY_UNAVAILABLE",
-                "message": "macro_emote 尚未配置（需要 emote 名 -> avatar 参数/动作 的映射表）。",
+                "message": "macro_emote is not configured (requires an emote-name -> avatar parameter/action mapping table).",
                 "details": {"name": name},
             },
         )
 
     @_tool(
         name="vrc_macro_idle",
-        description="宏：进入 idle（停止移动输入，并清除 typing）。",
+        description="Macro: enter idle (stop movement input and clear typing).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_macro_idle(ctx: Context | None = None) -> dict:
-        """宏：停止 input，并将 chatbox typing 置为 false。"""
+        """Macro: stop input and set chatbox typing to false."""
         async def _impl(*, trace_id: str):
             await adapter.input_stop(trace_id=trace_id)
             await adapter.chatbox_set_typing(is_typing=False, trace_id=trace_id)
@@ -903,12 +972,12 @@ def create_server(*, adapter) -> FastMCP:
 
     @_tool(
         name="vrc_macro_stop",
-        description="宏：停止所有动作（等同 vrc_stop_all）。",
+        description="Macro: stop everything (equivalent to vrc_stop_all).",
         output_schema=_ENVELOPE_OUTPUT_SCHEMA,
     )
     async def vrc_macro_stop(ctx: Context | None = None) -> dict:
-        """宏 stop（直接调用 stop_all）。"""
-        # Per PLAN: macro_stop 直接调用 stop_all
+        """Macro stop (calls stop_all directly)."""
+        # Per PLAN: macro_stop calls stop_all directly
         return await _wrap_async(adapter.stop_all)(ctx=ctx)
 
     return mcp
